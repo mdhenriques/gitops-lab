@@ -12,7 +12,7 @@ on:
 
 env:
   AWS_REGION: "us-east-1"                   # Ajuste para a sua região
-  ECR_REPOSITORY: "gitops-lab"    # Ajuste para o nome do seu repositório
+  ECR_REPOSITORY: "gitops-api"    # Ajuste para o nome do seu repositório
   MANIFEST_PATH: "k8s/base/deployment.yaml" # Caminho do seu deployment
 
 # Permissões necessárias para usar OIDC e commitar no repositório
