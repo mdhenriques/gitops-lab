@@ -71,4 +71,4 @@ jobs:
           
           # A tag [skip ci] garante de forma redundante que esse commit não iniciará outro workflow
           git commit -m "chore: atualiza imagem da api para ${{ github.sha }} [skip ci]" || echo "Nenhuma alteração para commitar"
-          git push origin main
+          git push origin master
