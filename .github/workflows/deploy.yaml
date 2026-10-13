@@ -1,9 +1,10 @@
 name: CI/CD - Build and GitOps Sync
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - main
+      - master
     # IMPORTANTE: Ignore a pasta de manifestos para evitar um loop infinito 
     # onde o commit do bot engatilha a pipeline novamente.
     paths-ignore:
