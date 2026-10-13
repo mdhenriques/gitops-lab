@@ -49,6 +49,7 @@ jobs:
           # Usando o SHA do commit como tag da imagem para rastreabilidade
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          cd apps/api
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           # Exporta a imagem completa para ser usada no próximo passo
