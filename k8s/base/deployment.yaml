@@ -18,7 +18,7 @@ spec:
       - name: ecr-cred
       containers:
       - name: api
-        image: 654654156336.dkr.ecr.us-east-1.amazonaws.com/gitops-api:12804ea5e4193da90f81dc96bfc115a763c5e39e
+        image: 654654156336.dkr.ecr.us-east-1.amazonaws.com/gitops-api:133b823989868c8de9189d90f16479e88348fc36
         imagePullPolicy: Always
         env:
         - name: DB_CONNECTION
