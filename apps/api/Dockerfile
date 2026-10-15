@@ -5,8 +5,8 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Criar um usuário não-root (boa prática de cibersegurança e requisito do nosso Kyverno)
-RUN adduser --disabled-password --gecos "" appuser
+# Criar um usuário não-root com UID numérico explícito (boa prática CIS Benchmark)
+RUN adduser --disabled-password --gecos "" --uid 10001 appuser
 
 # Definir o diretório de trabalho
 WORKDIR /app
@@ -15,14 +15,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar o código da aplicação
-COPY main.py .
+# Copiar o código da aplicação com ownership direto
+COPY --chown=appuser:appuser main.py .
 
-# Mudar a propriedade dos arquivos para o usuário não-root
-RUN chown -R appuser:appuser /app
-
-# Trocar para o usuário restrito
-USER appuser
+# Trocar para o usuário restrito pelo UID numérico
+USER 10001
 
 # Expor a porta que a aplicação vai rodar
 EXPOSE 8000

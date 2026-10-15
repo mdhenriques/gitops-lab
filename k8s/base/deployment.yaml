@@ -18,10 +18,25 @@ spec:
         prometheus.io/path: "/metrics"
         prometheus.io/port: "8000"
     spec:
+      # Boas praticas de seguranca (CIS Benchmark & Checkov)
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       imagePullSecrets:
       - name: ecr-cred
       containers:
       - name: api
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
         image: 654654156336.dkr.ecr.us-east-1.amazonaws.com/gitops-api:65b3ca848806f82930a60f5bdc32a8f325b14ee1
         imagePullPolicy: Always
         env:

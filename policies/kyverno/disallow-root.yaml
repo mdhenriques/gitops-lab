@@ -1,0 +1,49 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-root-and-privileged
+  annotations:
+    policies.kyverno.io/title: Disallow Root User and Privileged Containers
+    policies.kyverno.io/category: Pod Security Standards (Baseline & Restricted)
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Containers must run as non-root users (runAsNonRoot: true) and prevent privilege escalation.
+      Running as root or allowing privilege escalation increases the risk of container breakouts.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: check-run-as-non-root
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+          namespaces:
+          - default
+    validate:
+      message: "ALERTA DE SEGURANCA: O Pod foi bloqueado! Containers devem rodar como non-root (securityContext.runAsNonRoot: true)."
+      pattern:
+        spec:
+          =(securityContext):
+            runAsNonRoot: true
+          containers:
+          - =(securityContext):
+              runAsNonRoot: true
+
+  - name: check-privilege-escalation
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+          namespaces:
+          - default
+    validate:
+      message: "ALERTA DE SEGURANCA: O Pod foi bloqueado! Escalada de privilegios e proibida (securityContext.allowPrivilegeEscalation: false)."
+      pattern:
+        spec:
+          containers:
+          - securityContext:
+              allowPrivilegeEscalation: false
