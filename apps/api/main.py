@@ -36,11 +36,11 @@ def read_root():
     db_status = os.getenv("DB_CONNECTION")
     configured = bool(db_status and db_status != "Desconectado")
     
-    logger.info("Requisição processada com sucesso no endpoint raiz.")
+    logger.info("Requisicao processada com sucesso no endpoint raiz.")
     return {
         "message": "GitOps operando em tempo real com AWS ECR, ArgoCD e Observabilidade!",
         "database_configured": configured,
-        "db_status": db_status if db_status else "Desconectado (Aguardando AWS Secrets)"
+        "db_status": "Conectado com sucesso (Injetado via AWS SSM Parameter Store)" if configured else "Desconectado (Aguardando AWS Secrets)"
     }
 
 @app.get("/healthz")

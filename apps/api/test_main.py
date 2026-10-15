@@ -21,7 +21,7 @@ def test_read_root_configured(monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert data["database_configured"] is True
-    assert data["db_status"] == "postgresql://admin:secret@localhost:5432/db"
+    assert "Conectado com sucesso" in data["db_status"]
 
 def test_liveness_probe():
     """Liveness probe deve sempre responder 200 alive enquanto o processo estiver vivo."""
