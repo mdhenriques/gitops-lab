@@ -12,9 +12,12 @@ spec:
   sourceRepos:
     - "https://github.com/mdhenriques/gitops-lab.git"
 
-  # Destino restrito exclusivamente ao namespace production no cluster local
+  # Destinos autorizados (production para a aplicacao, default permitido para prune de migracao)
   destinations:
     - namespace: production
+      server: https://kubernetes.default.svc
+      name: in-cluster
+    - namespace: default
       server: https://kubernetes.default.svc
       name: in-cluster
 
