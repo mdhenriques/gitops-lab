@@ -37,7 +37,7 @@ spec:
           capabilities:
             drop:
             - ALL
-        image: 654654156336.dkr.ecr.us-east-1.amazonaws.com/gitops-api:50bf971b7ac67edd1e56dfdfc4b6a9c42669590d
+        image: 654654156336.dkr.ecr.us-east-1.amazonaws.com/gitops-api:58002b0208be6f5bcc9be904473b782d4b519c5e
         imagePullPolicy: Always
         env:
         - name: DB_CONNECTION
