@@ -39,9 +39,9 @@ flowchart TD
         K8S_POL -->|Enforce Policies| KYVERNO["Kyverno Admission Controller"]
         KYVERNO -->|Bloqueia Root & Sem Recursos| PODS["Pods gitops-api (CIS Hardened)"]
         
-        ESO["External Secrets Operator"] -->|Token Gen (12h)| ECR
-        ESO -->|Lê Parâmetros| SSM[("AWS SSM Parameter Store\n(SecureString write_only)")]
-        ESO -->|Sincroniza| SECRETS["K8s Secrets (api-db-secret & ecr-cred)"]
+        ESO["External Secrets Operator"] -->|"Token Gen 12h"| ECR
+        ESO -->|Lê Parâmetros| SSM[("AWS SSM Parameter Store\nwrite_only")]
+        ESO -->|Sincroniza| SECRETS["K8s Secrets: api-db-secret & ecr-cred"]
         SECRETS -.->|Injeta Credenciais| PODS
         
         PODS -->|/metrics| PROM["Prometheus Monitoring"]
