@@ -9,16 +9,26 @@ on:
     # onde o commit do bot engatilha a pipeline novamente.
     paths-ignore:
       - 'k8s/**'
+      - 'argocd/**'
 
 env:
   AWS_REGION: "us-east-1"                   # Ajuste para a sua região
   ECR_REPOSITORY: "gitops-api"    # Ajuste para o nome do seu repositório
   MANIFEST_PATH: "k8s/base/deployment.yaml" # Caminho do seu deployment
+  # Branch fixa e "rolante" usada para o PR de atualizacao da imagem
+  DEPLOY_BRANCH: "automation/update-api-image"
 
-# Permissões necessárias para usar OIDC e commitar no repositório
+# Evita corrida entre builds simultaneos: um por vez, sem cancelar o que ja esta rodando.
+concurrency:
+  group: gitops-deploy
+  cancel-in-progress: false
+
+# Permissões necessárias para usar OIDC, publicar a branch de automação e abrir o PR.
+# Requer: Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".
 permissions:
   id-token: write
   contents: write
+  pull-requests: write
 
 jobs:
   build-and-deploy:
@@ -63,12 +73,34 @@ jobs:
           # Isso assume que no seu deployment.yaml existe uma linha no formato: image: <url>
           sed -i -E "s|(image: ).*|\1$NEW_IMAGE|" ${{ env.MANIFEST_PATH }}
           
-      - name: Commit e Push das alterações para o ArgoCD
+      - name: Abrir/atualizar Pull Request para o ArgoCD
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_IMAGE: ${{ steps.build-image.outputs.image }}
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add ${{ env.MANIFEST_PATH }}
-          
-          # A tag [skip ci] garante de forma redundante que esse commit não iniciará outro workflow
-          git commit -m "chore: atualiza imagem da api para ${{ github.sha }} [skip ci]" || echo "Nenhuma alteração para commitar"
-          git push origin master
+          if git diff --quiet -- "$MANIFEST_PATH"; then
+            echo "Nenhuma alteracao no manifesto; nada a fazer."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # O merge so altera k8s/** (coberto por paths-ignore), entao nao gera novo build.
+          git checkout -B "$DEPLOY_BRANCH"
+          git add "$MANIFEST_PATH"
+          git commit -m "chore: atualiza imagem da api para ${GITHUB_SHA}"
+
+          # Branch unica e descartavel: sempre reflete o build mais recente, evitando
+          # PRs conflitantes quando varios builds acontecem antes do merge.
+          git push --force origin "$DEPLOY_BRANCH"
+
+          TITLE="chore: atualiza imagem da api para ${GITHUB_SHA::7}"
+          BODY=$(printf 'Atualizacao automatica da imagem do deployment.\n\n- Imagem: `%s`\n- Commit de origem: %s\n- Workflow: %s/%s/actions/runs/%s' \
+            "$NEW_IMAGE" "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")
+
+          if gh pr view "$DEPLOY_BRANCH" --json state --jq '.state' 2>/dev/null | grep -q '^OPEN$'; then
+            gh pr edit "$DEPLOY_BRANCH" --title "$TITLE" --body "$BODY"
+          else
+            gh pr create --base master --head "$DEPLOY_BRANCH" --title "$TITLE" --body "$BODY"
+          fi

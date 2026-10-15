@@ -1,0 +1,23 @@
+# Gera tokens de autenticacao do ECR (validos por 12h) usando as mesmas credenciais
+# do ClusterSecretStore. Usamos ClusterGenerator (e nao o ECRAuthorizationToken
+# namespaced) porque o Secret aws-secret vive no namespace external-secrets, e so
+# recursos cluster-scoped podem referenciar um Secret em outro namespace.
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: ClusterGenerator
+metadata:
+  name: ecr-authorization-token
+spec:
+  kind: ECRAuthorizationToken
+  generator:
+    ecrAuthorizationTokenSpec:
+      region: us-east-1
+      auth:
+        secretRef:
+          accessKeyIDSecretRef:
+            name: aws-secret
+            key: access-key-id
+            namespace: external-secrets
+          secretAccessKeySecretRef:
+            name: aws-secret
+            key: secret-access-key
+            namespace: external-secrets

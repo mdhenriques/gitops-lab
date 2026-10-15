@@ -1,4 +1,18 @@
 terraform {
+  # >= 1.11: necessario para atributos write-only (value_wo) e recursos ephemeral
+  required_version = ">= 1.11.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.7" # 3.7+ para ephemeral "random_password"
+    }
+  }
+
   backend "s3" {
     bucket       = "gitops-tfstate-murilo-lab" 
     key          = "devsecops/terraform.tfstate"
@@ -16,16 +30,21 @@ provider "aws" {
 # TERRAFORM STATE BACKEND (S3 & DynamoDB)
 # ==========================================
 
-# 1. Bucket S3 para guardar o arquivo de estado
-resource "aws_s3_bucket" "terraform_state" {
-  bucket = "gitops-tfstate-murilo-lab" # Altere se der erro de nome duplicado
+# O bucket S3 do state (e seu hardening) agora vive em terraform/bootstrap, com
+# state proprio, para nao ser gerenciado pelo mesmo state que ele guarda.
+# Os blocos removed abaixo tiram os recursos DESTE state SEM destrui-los na AWS
+# (destroy = false). Podem ser apagados depois do primeiro apply.
+removed {
+  from = aws_s3_bucket.terraform_state
+  lifecycle {
+    destroy = false
+  }
 }
 
-# Habilitar versionamento (salva o histórico da infraestrutura)
-resource "aws_s3_bucket_versioning" "terraform_state_versioning" {
-  bucket = aws_s3_bucket.terraform_state.id
-  versioning_configuration {
-    status = "Enabled"
+removed {
+  from = aws_s3_bucket_versioning.terraform_state_versioning
+  lifecycle {
+    destroy = false
   }
 }
 
@@ -45,17 +64,31 @@ resource "aws_dynamodb_table" "terraform_locks" {
 # GESTÃO DE SEGREDOS (SSM & External Secrets)
 # ==========================================
 
-resource "random_password" "db_password" {
+# Recurso ephemeral: o valor existe so durante o plan/apply e NUNCA e gravado no
+# state nem no plano.
+ephemeral "random_password" "db_password" {
   length           = 16
   special          = true
   override_special = "!#$%&*()-_=+[]{}<>:?"
+}
+
+# Remove o antigo random_password do state (o valor ficava la em texto claro).
+removed {
+  from = random_password.db_password
+  lifecycle {
+    destroy = false
+  }
 }
 
 resource "aws_ssm_parameter" "db_connection" {
   name        = "gitops-db-connection"
   description = "Connection string para o banco de dados da API GitOps"
   type        = "SecureString"
-  value       = random_password.db_password.result
+
+  # Write-only: enviado a AWS mas nao persistido no state. O valor so e reenviado
+  # quando value_wo_version muda. Incremente-o para rotacionar a senha.
+  value_wo         = ephemeral.random_password.db_password.result
+  value_wo_version = 1
 }
 
 # Criação do Usuário IAM para o External Secrets Operator
@@ -71,7 +104,7 @@ resource "aws_iam_access_key" "eso_user_key" {
 # Aplicação do Princípio do Menor Privilégio (Least Privilege)
 resource "aws_iam_policy" "eso_policy" {
   name        = "ExternalSecretsOperatorPolicy"
-  description = "Permite leitura restrita apenas ao parametro do banco de dados"
+  description = "Leitura restrita ao parametro do banco de dados e pull de imagens do ECR (token gerado pelo ESO)"
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -83,6 +116,25 @@ resource "aws_iam_policy" "eso_policy" {
         ]
         Effect   = "Allow"
         Resource = aws_ssm_parameter.db_connection.arn
+      },
+      {
+        # Usado pelo ClusterGenerator ECRAuthorizationToken (k8s/base) para manter
+        # o imagePullSecret ecr-cred renovado.
+        Sid      = "EcrGetAuthorizationToken"
+        Effect   = "Allow"
+        Action   = "ecr:GetAuthorizationToken"
+        Resource = "*" # A AWS nao aceita ARN especifico para esta acao
+      },
+      {
+        # O token herda as permissoes do usuario: somente pull, somente neste repo.
+        Sid    = "EcrPullOnlyApiRepo"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+        Resource = aws_ecr_repository.api_repo.arn
       }
     ]
   })
