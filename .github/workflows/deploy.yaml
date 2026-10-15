@@ -31,8 +31,23 @@ permissions:
   pull-requests: write
 
 jobs:
+  iac-security:
+    name: DevSecOps - IaC Security Scan (Checkov)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Executar Checkov nas pastas Terraform e Kubernetes
+        uses: bridgecrewio/checkov-action@master
+        with:
+          framework: terraform,kubernetes
+          output_format: cli
+          soft_fail: true # Gera o relatório completo no log sem travar a pipeline experimental
+
   build-and-deploy:
-    name: Build, Push and Update Manifest
+    name: Build, Security Scan and GitOps Sync
+    needs: [iac-security]
     runs-on: ubuntu-latest
 
     steps:
@@ -52,22 +67,35 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build e Push da imagem Docker
+      - name: Build da Imagem Docker
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          # Usando o SHA do commit como tag da imagem para rastreabilidade
           IMAGE_TAG: ${{ github.sha }}
         run: |
           FULL_IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           echo "image=$FULL_IMAGE" >> $GITHUB_OUTPUT
+          cd apps/api
+          docker build -t "$FULL_IMAGE" .
 
+      - name: DevSecOps - Container Vulnerability Scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.build-image.outputs.image }}
+          format: 'table'
+          exit-code: '0' # Relatório informativo (use 1 para bloquear caso encontre CRITICAL)
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Push da imagem no Amazon ECR
+        env:
+          FULL_IMAGE: ${{ steps.build-image.outputs.image }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
           # Se a imagem ja existe no ECR (ex: em caso de Re-run), pula o push para respeitar a imutabilidade
           if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
-            echo "Imagem $FULL_IMAGE já existe no ECR. Pulando build/push (respeitando tag imutável)."
+            echo "Imagem $FULL_IMAGE já existe no ECR. Pulando push (respeitando tag imutável)."
           else
-            cd apps/api
-            docker build -t "$FULL_IMAGE" .
             docker push "$FULL_IMAGE"
           fi
 
