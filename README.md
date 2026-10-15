@@ -67,7 +67,7 @@ flowchart TD
 | **Ciclo de Atualização** | O bot de CI/CD commita diretamente na branch `master`. | **Automated Pull Requests:** A pipeline abre uma branch rolante com PR para auditoria e controle de merge. |
 | **Segurança no Pipeline** | Build e deploy direto sem checagem de vulnerabilidades. | **Shift-Left Security:** Varredura estática de IaC com **Checkov** e varredura de CVEs de container com **Aqua Trivy**. |
 | **Segurança de Runtime** | Containers rodando como `root` com privilégios padrão. | **Kyverno Policy-as-Code:** Bloqueio no Admission Webhook para containers sem limits ou tentando rodar como root. |
-| **Observabilidade** | Probes estáticas (`/healthz` retornando `ok` cego). | **Readiness inteligente** validando injeção de segredos + **Métricas OpenMetrics/Prometheus** nativas (`/metrics`). |
+| **Observabilidade** | Probes cegas ou liveness reiniciando pod em falha de dependência. | **Separação estrita Liveness (`/healthz`) vs. Readiness (`/readyz`)** + **Métricas OpenMetrics/Prometheus** (`/metrics`). |
 
 ---
 

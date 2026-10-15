@@ -44,15 +44,24 @@ def read_root():
     }
 
 @app.get("/healthz")
-def health_check(response: Response):
+def liveness():
     """
-    Probe inteligente de saúde (Readiness/Liveness).
-    Garante que o pod só recebe tráfego se os segredos essenciais foram injetados.
+    Liveness Probe: Valida se o processo e event-loop da aplicacao estao vivos.
+    Se falhar, o Kubernetes reinicia o container para recuperar de deadlocks.
+    """
+    return {"status": "alive"}
+
+@app.get("/readyz")
+def readiness(response: Response):
+    """
+    Readiness Probe: Valida se a aplicacao esta pronta para receber trafego.
+    Verifica se configuracoes essenciais e conexoes foram injetadas.
+    Se falhar, o Kubernetes apenas remove o pod dos endpoints de trafego (sem reiniciar).
     """
     db_status = os.getenv("DB_CONNECTION")
     if not db_status or db_status.startswith("Desconectado"):
-        logger.warning("Falha na checagem de saúde: segredos da AWS não encontrados.")
+        logger.warning("Readiness probe falhou: DB_CONNECTION ausente ou desconectado.")
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        return {"status": "unhealthy", "reason": "DB_CONNECTION secret not injected"}
+        return {"status": "not_ready", "reason": "DB_CONNECTION not configured"}
     
-    return {"status": "healthy", "service": "api"}
+    return {"status": "ready"}
