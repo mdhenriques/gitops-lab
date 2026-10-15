@@ -75,7 +75,7 @@ flowchart TD
 
 - **Cloud Provider:** AWS (ECR, SSM Parameter Store, IAM OIDC, S3 Backend com Lock Nativo)
 - **Infrastructure as Code (IaC):** Terraform >= 1.11 (HCL modular com stack bootstrap separado)
-- **Container & Runtime:** Docker (Multi-stage/non-root UID 10001), Kubernetes v1.30+ (Kind)
+- **Container & Runtime:** Docker (python:3.11-slim, non-root UID 10001), Kubernetes v1.30+ (Kind)
 - **GitOps Engine:** ArgoCD (Padrão declarativo com auto-heal e prune)
 - **Segurança & Políticas:** Checkov, Aqua Trivy, Kyverno Admission Controller, External Secrets Operator (ESO)
 - **Aplicação & Observabilidade:** Python 3.11, FastAPI, Uvicorn, Prometheus Instrumentator, Structured JSON Logs
@@ -138,9 +138,10 @@ done
 
 ### 5. Ativar as Aplicações no ArgoCD
 ```bash
-# Aplica os manifestos declarativos das aplicações e políticas de segurança
+# Aplica os manifestos declarativos das aplicações, políticas e monitoramento
 kubectl apply -f argocd/application.yaml
 kubectl apply -f argocd/security-policies-app.yaml
+kubectl apply -f argocd/monitoring-app.yaml
 ```
 
 ---
