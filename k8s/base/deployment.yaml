@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         app: gitops-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8000"
     spec:
       imagePullSecrets:
       - name: ecr-cred
@@ -28,6 +32,7 @@ spec:
               key: DB_CONNECTION
         ports:
         - containerPort: 8000
+          name: http
         resources:
           requests:
             memory: "64Mi"
@@ -39,5 +44,11 @@ spec:
           httpGet:
             path: /healthz
             port: 8000
-          initialDelaySeconds: 3
+          initialDelaySeconds: 5
           periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 3
+          periodSeconds: 5
