@@ -121,19 +121,24 @@ terraform init && terraform apply
 # 1. Criar o cluster Kind multi-node
 kind create cluster --config kind-config.yaml --name gitops-lab
 
-# 2. Instalar o External Secrets Operator (ESO)
+# 2. Instalar o External Secrets Operator (versao fixada v2.12.0)
 helm repo add external-secrets https://charts.external-secrets.io
+helm repo update
 helm install external-secrets external-secrets/external-secrets \
+  --version 2.12.0 \
   -n external-secrets --create-namespace \
   -f k8s/eso-values.yaml
 
-# 3. Instalar o Kyverno (Admission Controller)
+# 3. Instalar o Kyverno Admission Controller (versao fixada 3.9.1)
 helm repo add kyverno https://kyverno.github.io/kyverno/
-helm install kyverno kyverno/kyverno -n kyverno --create-namespace
+helm repo update
+helm install kyverno kyverno/kyverno \
+  --version 3.9.1 \
+  -n kyverno --create-namespace
 
-# 4. Instalar o ArgoCD
+# 4. Instalar o ArgoCD (versao fixada v3.5.5)
 kubectl create namespace argocd
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.5/manifests/install.yaml
 ```
 
 ### 4. Configuração das Credenciais do ESO (One-time Bootstrap)

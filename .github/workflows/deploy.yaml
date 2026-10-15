@@ -64,6 +64,19 @@ jobs:
           # O fetch-depth: 1 é suficiente se não for precisar de histórico do git
           fetch-depth: 1
 
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: apps/api/requirements*.txt
+
+      - name: Executar Testes Unitarios da API (Pytest)
+        run: |
+          cd apps/api
+          pip install -r requirements.txt -r requirements-dev.txt
+          pytest test_main.py -v
+
       - name: Configurar Credenciais AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
