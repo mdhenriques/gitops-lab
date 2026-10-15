@@ -32,6 +32,7 @@ spec:
       containers:
       - name: api
         securityContext:
+          runAsNonRoot: true
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: false
           capabilities:
