@@ -1,0 +1,80 @@
+# Application do ArgoCD que instala o Prometheus (coletor de metricas) via Helm.
+# O chart oficial e instalado a partir do repositorio da comunidade, com a versao
+# FIXADA em targetRevision (reprodutivel: nada muda sem um commit aqui).
+#
+# Por que o Prometheus enxerga a API sem nenhuma configuracao extra:
+# o job padrao "kubernetes-pods" do chart descobre pods pelas anotacoes
+# prometheus.io/scrape, /path e /port que ja estao no k8s/base/deployment.yaml.
+#
+# Bootstrap (uma unica vez, apos instalar o ArgoCD):
+#   kubectl apply -f argocd/monitoring-app.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: prometheus
+    targetRevision: 29.37.0
+    helm:
+      releaseName: prometheus
+      valuesObject:
+        # --- Componentes desligados: nao sao necessarios neste laboratorio ---
+        alertmanager:
+          enabled: false
+        prometheus-pushgateway:
+          enabled: false
+        prometheus-node-exporter:
+          enabled: false
+
+        server:
+          global:
+            scrape_interval: 15s
+          retention: 6h
+          # Laboratorio em kind: sem PVC. Os dados sao perdidos se o pod for recriado.
+          persistentVolume:
+            enabled: false
+          # A politica Kyverno "require-resources" bloqueia pods sem requests/limits
+          # em todos os namespaces, entao CADA container abaixo precisa declarar os dois.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+        # Sidecar que recarrega a config do Prometheus quando o ConfigMap muda
+        configmapReload:
+          prometheus:
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                cpu: 50m
+                memory: 64Mi
+
+        # Expoe metricas do proprio Kubernetes (estado de Deployments, Pods, etc.)
+        kube-state-metrics:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
