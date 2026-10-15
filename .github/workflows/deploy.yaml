@@ -59,11 +59,17 @@ jobs:
           # Usando o SHA do commit como tag da imagem para rastreabilidade
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          cd apps/api
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          # Exporta a imagem completa para ser usada no próximo passo
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          FULL_IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          echo "image=$FULL_IMAGE" >> $GITHUB_OUTPUT
+
+          # Se a imagem ja existe no ECR (ex: em caso de Re-run), pula o push para respeitar a imutabilidade
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
+            echo "Imagem $FULL_IMAGE já existe no ECR. Pulando build/push (respeitando tag imutável)."
+          else
+            cd apps/api
+            docker build -t "$FULL_IMAGE" .
+            docker push "$FULL_IMAGE"
+          fi
 
       - name: Atualizar tag da imagem no Deployment
         env:
