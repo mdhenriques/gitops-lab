@@ -5,14 +5,17 @@
 # que guarda o state do stack principal nao pode ser gerenciado por esse mesmo state.
 #
 # Este stack usa state LOCAL (terraform.tfstate, ignorado pelo .gitignore). Ele nao
-# contem segredos e e totalmente recuperavel: os blocos import abaixo reimportam o
-# bucket caso o state local seja perdido.
+# contem segredos e e responsavel por provisionar o bucket S3 de forma declarativa
+# com politicas estritas de seguranca (SSE-S3, TLS Deny, Versionamento, Lifecycle).
+#
+# Caso deseje reaproveitar um bucket S3 ja existente na AWS, importe-o uma vez com:
+#   terraform import aws_s3_bucket.terraform_state <nome-do-bucket>
 #
 # Ordem de execucao (uma unica vez):
 #   1. cd terraform/bootstrap && terraform init && terraform apply
-#      (importa o bucket existente e aplica o hardening)
-#   2. cd ../ && terraform apply
-#      (os blocos "removed" em main.tf tiram o bucket do state antigo sem destrui-lo)
+#      (cria o bucket S3 com o hardening completo)
+#   2. cd ../ && terraform init && terraform apply
+#      (provisiona os recursos principais com backend S3 remoto)
 
 terraform {
   required_version = ">= 1.11.0"
@@ -31,19 +34,6 @@ provider "aws" {
 
 locals {
   state_bucket_name = "gitops-tfstate-murilo-lab"
-}
-
-# ------------------------------------------
-# Importa os recursos que ja existem na AWS
-# ------------------------------------------
-import {
-  to = aws_s3_bucket.terraform_state
-  id = local.state_bucket_name
-}
-
-import {
-  to = aws_s3_bucket_versioning.terraform_state
-  id = local.state_bucket_name
 }
 
 # ------------------------------------------

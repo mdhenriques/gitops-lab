@@ -113,6 +113,9 @@ cd ..
 terraform init && terraform apply
 ```
 
+> [!NOTE]
+> O stack de bootstrap cria o bucket S3 do zero de forma declarativa. Caso você já possua um bucket pré-existente na sua conta AWS que deseje reutilizar, execute antes do apply: `terraform import aws_s3_bucket.terraform_state <nome-do-bucket>`.
+
 ### 3. Inicialização do Cluster Kubernetes e Ferramentas Base
 ```bash
 # 1. Criar o cluster Kind multi-node
