@@ -5,11 +5,18 @@ on:
   push:
     branches:
       - master
-    # IMPORTANTE: Ignore a pasta de manifestos para evitar um loop infinito 
-    # onde o commit do bot engatilha a pipeline novamente.
+    # IMPORTANTE: Ignora documentação, manifestos e configurações locais
+    # para evitar execuções desnecessárias e loops infinitos de commits do bot.
     paths-ignore:
       - 'k8s/**'
       - 'argocd/**'
+      - 'policies/**'
+      - 'kind-config.yaml'
+      - 'README.md'
+      - 'docs/**'
+      - '*.md'
+      - '.gitignore'
+      - 'LICENSE'
 
 env:
   AWS_REGION: "us-east-1"                   # Ajuste para a sua região
