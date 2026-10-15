@@ -20,8 +20,17 @@ spec:
       - resources:
           kinds:
           - Pod
+    exclude:
+      any:
+      - resources:
           namespaces:
-          - default
+          - kube-system
+          - kube-public
+          - kube-node-lease
+          - kyverno
+          - argocd
+          - monitoring
+          - external-secrets
     validate:
       message: "ALERTA DE SEGURANCA: O Pod foi bloqueado! Containers devem rodar como non-root (securityContext.runAsNonRoot: true)."
       pattern:
@@ -38,8 +47,17 @@ spec:
       - resources:
           kinds:
           - Pod
+    exclude:
+      any:
+      - resources:
           namespaces:
-          - default
+          - kube-system
+          - kube-public
+          - kube-node-lease
+          - kyverno
+          - argocd
+          - monitoring
+          - external-secrets
     validate:
       message: "ALERTA DE SEGURANCA: O Pod foi bloqueado! Escalada de privilegios e proibida (securityContext.allowPrivilegeEscalation: false)."
       pattern:

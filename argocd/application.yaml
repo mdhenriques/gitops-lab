@@ -10,17 +10,19 @@ metadata:
   name: gitops-api
   namespace: argocd
 spec:
-  project: default
+  project: gitops-lab-project
   source:
     repoURL: https://github.com/mdhenriques/gitops-lab.git
     targetRevision: master
     path: k8s/base
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: production
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
     retry:
       limit: 5

@@ -147,8 +147,8 @@ Obtenha as credenciais geradas pelo Terraform e crie os secrets nos namespaces n
 ESO_KEY=$(terraform output -raw eso_access_key_id)
 ESO_SECRET=$(terraform output -raw eso_secret_access_key)
 
-# Criar no namespace do operador e no namespace default
-for ns in external-secrets default; do
+# Criar no namespace do operador e no namespace production da aplicacao
+for ns in external-secrets production; do
   kubectl create secret generic aws-secret \
     --from-literal=access-key-id="$ESO_KEY" \
     --from-literal=secret-access-key="$ESO_SECRET" \
@@ -158,7 +158,10 @@ done
 
 ### 5. Ativar as Aplicações no ArgoCD
 ```bash
-# Aplica os manifestos declarativos das aplicações, políticas e monitoramento
+# 1. Aplica o AppProject com governança e restrições de segurança
+kubectl apply -f argocd/app-project.yaml
+
+# 2. Aplica os manifestos declarativos das aplicações, políticas e monitoramento
 kubectl apply -f argocd/application.yaml
 kubectl apply -f argocd/security-policies-app.yaml
 kubectl apply -f argocd/monitoring-app.yaml
@@ -171,12 +174,12 @@ kubectl apply -f argocd/monitoring-app.yaml
 ### Testando a Resiliência das Políticas de Segurança (Kyverno)
 Tente executar um container padrão que viole as regras de não-root ou de ausência de limites de recursos:
 ```bash
-kubectl run rogue-pod --image=nginx -n default
+kubectl run rogue-pod --image=nginx -n production
 ```
 **Resultado esperado:**
 ```text
 Error from server: admission webhook "validate.kyverno.svc-fail" denied the request:
-resource Pod/default/rogue-pod was blocked due to the following policies:
+resource Pod/production/rogue-pod was blocked due to the following policies:
 - check-privilege-escalation: Escalada de privilégios é proibida!
 - check-run-as-non-root: Containers devem rodar como non-root!
 - require-resources: É obrigatório definir limites de CPU e Memória!
@@ -185,7 +188,7 @@ resource Pod/default/rogue-pod was blocked due to the following policies:
 ### Testando a API e Observabilidade
 ```bash
 # Encaminhar porta da API
-kubectl port-forward svc/gitops-api-svc 8080:80 -n default
+kubectl port-forward svc/gitops-api-svc 8080:80 -n production
 
 # 1. Consultar endpoint com segredo seguro injetado via SSM
 curl http://localhost:8080/

@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: gitops-lab-project
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "Projeto de governanca para workloads da API GitOps e segredos"
+
+  # Apenas este repositorio Git tem permissao de deploy neste projeto
+  sourceRepos:
+    - "https://github.com/mdhenriques/gitops-lab.git"
+
+  # Destino restrito exclusivamente ao namespace production no cluster local
+  destinations:
+    - namespace: production
+      server: https://kubernetes.default.svc
+      name: in-cluster
+
+  # Whitelist de recursos cluster-scoped permitidos (ClusterSecretStore e ClusterGenerator do ESO)
+  clusterResourceWhitelist:
+    - group: "external-secrets.io"
+      kind: "ClusterSecretStore"
+    - group: "generators.external-secrets.io"
+      kind: "ClusterGenerator"
+
+  # Permite todos os recursos namespaced padroes dentro de production
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
