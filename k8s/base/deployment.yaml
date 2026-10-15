@@ -34,7 +34,7 @@ spec:
         securityContext:
           runAsNonRoot: true
           allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
             - ALL
@@ -56,6 +56,9 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "200m"
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
         livenessProbe:
           httpGet:
             path: /healthz
@@ -68,3 +71,6 @@ spec:
             port: 8000
           initialDelaySeconds: 3
           periodSeconds: 5
+      volumes:
+      - name: tmp
+        emptyDir: {}

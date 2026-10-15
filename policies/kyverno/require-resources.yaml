@@ -2,6 +2,13 @@ apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: require-resources
+  annotations:
+    policies.kyverno.io/title: Require CPU and Memory Limits and Requests
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Pods must define CPU and memory requests and limits to ensure fair scheduling
+      and prevent resource starvation. System infrastructure namespaces are excluded.
 spec:
   validationFailureAction: Enforce
   background: false
@@ -12,8 +19,19 @@ spec:
       - resources:
           kinds:
           - Pod
+    exclude:
+      any:
+      - resources:
+          namespaces:
+          - kube-system
+          - kube-public
+          - kube-node-lease
+          - kyverno
+          - argocd
+          - monitoring
+          - external-secrets
     validate:
-      message: "ALERTA DE SEGURANCA: O seu contentor foi bloqueado! E obrigatorio definir limites de CPU e Memoria (resources.requests e resources.limits)."
+      message: "ALERTA DE SEGURANCA: O container foi bloqueado! E obrigatorio definir limites de CPU e Memoria (resources.requests e resources.limits)."
       pattern:
         spec:
           containers:
