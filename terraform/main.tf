@@ -14,7 +14,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket       = "gitops-tfstate-murilo-lab" 
+    bucket       = "gitops-tfstate-murilo-lab"
     key          = "devsecops/terraform.tfstate"
     region       = "us-east-1"
     encrypt      = true
@@ -23,41 +23,7 @@ terraform {
 }
 
 provider "aws" {
-  region = "us-east-1" 
-}
-
-# ==========================================
-# TERRAFORM STATE BACKEND (S3 & DynamoDB)
-# ==========================================
-
-# O bucket S3 do state (e seu hardening) agora vive em terraform/bootstrap, com
-# state proprio, para nao ser gerenciado pelo mesmo state que ele guarda.
-# Os blocos removed abaixo tiram os recursos DESTE state SEM destrui-los na AWS
-# (destroy = false). Podem ser apagados depois do primeiro apply.
-removed {
-  from = aws_s3_bucket.terraform_state
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = aws_s3_bucket_versioning.terraform_state_versioning
-  lifecycle {
-    destroy = false
-  }
-}
-
-# 2. Tabela DynamoDB para State Locking (impede conflitos e concorrência)
-resource "aws_dynamodb_table" "terraform_locks" {
-  name         = "gitops-tfstate-locks"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
+  region = var.aws_region
 }
 
 # ==========================================
@@ -72,16 +38,8 @@ ephemeral "random_password" "db_password" {
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
-# Remove o antigo random_password do state (o valor ficava la em texto claro).
-removed {
-  from = random_password.db_password
-  lifecycle {
-    destroy = false
-  }
-}
-
 resource "aws_ssm_parameter" "db_connection" {
-  name        = "gitops-db-connection"
+  name        = var.ssm_db_connection_param_name
   description = "Connection string para o banco de dados da API GitOps"
   type        = "SecureString"
 
@@ -105,12 +63,12 @@ resource "aws_iam_access_key" "eso_user_key" {
 resource "aws_iam_policy" "eso_policy" {
   name        = "ExternalSecretsOperatorPolicy"
   description = "Leitura restrita ao parametro do banco de dados e pull de imagens do ECR (token gerado pelo ESO)"
-  
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Action   = [
+        Action = [
           "ssm:GetParameter",
           "ssm:GetParameters"
         ]
@@ -151,12 +109,34 @@ resource "aws_iam_user_policy_attachment" "eso_attach" {
 # ==========================================
 
 resource "aws_ecr_repository" "api_repo" {
-  name                 = "gitops-api"
-  image_tag_mutability = "IMMUTABLE" 
+  name                 = var.ecr_repository_name
+  image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
-    scan_on_push = true 
+    scan_on_push = true
   }
+}
+
+# Politica de ciclo de vida do ECR: retem apenas as imagens mais recentes para otimizacao de custos
+resource "aws_ecr_lifecycle_policy" "api_repo" {
+  repository = aws_ecr_repository.api_repo.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "FinOps: mantem apenas as ultimas ${var.ecr_image_retention_count} imagens no repositorio"
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = var.ecr_image_retention_count
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
 }
 
 # ==========================================
@@ -194,7 +174,7 @@ resource "aws_iam_role" "github_actions_deploy" {
         Condition = {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-            "token.actions.githubusercontent.com:sub" = "repo:mdhenriques@103260127/gitops-lab@1416272098:ref:refs/heads/master"
+            "token.actions.githubusercontent.com:sub" = var.github_oidc_sub
           }
         }
       }
