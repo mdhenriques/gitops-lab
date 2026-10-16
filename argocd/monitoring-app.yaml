@@ -1,12 +1,12 @@
-# Application do ArgoCD que instala o Prometheus (coletor de metricas) via Helm.
-# O chart oficial e instalado a partir do repositorio da comunidade, com a versao
-# FIXADA em targetRevision (reprodutivel: nada muda sem um commit aqui).
+# ArgoCD Application that installs Prometheus (metrics collector) via Helm.
+# The official chart is installed from the community repository, with the version
+# PINNED in targetRevision (reproducible: nothing changes without a commit here).
 #
-# Por que o Prometheus enxerga a API sem nenhuma configuracao extra:
-# o job padrao "kubernetes-pods" do chart descobre pods pelas anotacoes
-# prometheus.io/scrape, /path e /port que ja estao no k8s/base/deployment.yaml.
+# Why Prometheus detects the API without extra configuration:
+# the chart default job "kubernetes-pods" discovers pods via the annotations
+# prometheus.io/scrape, /path, and /port already present in k8s/base/deployment.yaml.
 #
-# Bootstrap (uma unica vez, apos instalar o ArgoCD):
+# Bootstrap (one-time command after installing ArgoCD):
 #   kubectl apply -f argocd/monitoring-app.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -22,7 +22,7 @@ spec:
     helm:
       releaseName: prometheus
       valuesObject:
-        # --- Componentes desligados: nao sao necessarios neste laboratorio ---
+        # --- Disabled components: not needed in this lab environment ---
         alertmanager:
           enabled: false
         prometheus-pushgateway:
@@ -34,11 +34,11 @@ spec:
           global:
             scrape_interval: 15s
           retention: 6h
-          # Laboratorio em kind: sem PVC. Os dados sao perdidos se o pod for recriado.
+          # Kind local lab: without PVC. Data is ephemeral if pod restarts.
           persistentVolume:
             enabled: false
-          # A politica Kyverno "require-resources" bloqueia pods sem requests/limits
-          # em todos os namespaces, entao CADA container abaixo precisa declarar os dois.
+          # Kyverno policy "require-resources" blocks pods without requests/limits
+          # in all namespaces, so EACH container below must declare both.
           resources:
             requests:
               cpu: 100m
@@ -47,7 +47,7 @@ spec:
               cpu: 500m
               memory: 512Mi
 
-        # Sidecar que recarrega a config do Prometheus quando o ConfigMap muda
+        # Sidecar that reloads Prometheus configuration when ConfigMap changes
         configmapReload:
           prometheus:
             resources:
@@ -58,7 +58,7 @@ spec:
                 cpu: 50m
                 memory: 64Mi
 
-        # Expoe metricas do proprio Kubernetes (estado de Deployments, Pods, etc.)
+        # Exposes Kubernetes cluster metrics (Deployments, Pods state, etc.)
         kube-state-metrics:
           resources:
             requests:

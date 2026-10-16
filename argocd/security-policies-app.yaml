@@ -1,4 +1,4 @@
-# Application do ArgoCD que sincroniza as politicas de seguranca do Kyverno (DevSecOps)
+# ArgoCD Application that synchronizes Kyverno security policies (DevSecOps)
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
