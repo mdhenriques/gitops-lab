@@ -5,8 +5,8 @@ on:
   push:
     branches:
       - master
-    # IMPORTANTE: Ignora documentação, manifestos e configurações locais
-    # para evitar execuções desnecessárias e loops infinitos de commits do bot.
+    # IMPORTANT: Ignores documentation, manifests, and local configs
+    # to avoid unnecessary runs and infinite bot commit loops.
     paths-ignore:
       - 'k8s/**'
       - 'argocd/**'
@@ -19,19 +19,19 @@ on:
       - 'LICENSE'
 
 env:
-  AWS_REGION: "us-east-1"                   # Ajuste para a sua região
-  ECR_REPOSITORY: "gitops-api"    # Ajuste para o nome do seu repositório
-  MANIFEST_PATH: "k8s/base/deployment.yaml" # Caminho do seu deployment
-  # Branch fixa e "rolante" usada para o PR de atualizacao da imagem
+  AWS_REGION: "us-east-1"
+  ECR_REPOSITORY: "gitops-api"
+  MANIFEST_PATH: "k8s/base/deployment.yaml"
+  # Rolling automation branch used for the image update PR
   DEPLOY_BRANCH: "automation/update-api-image"
 
-# Evita corrida entre builds simultaneos: um por vez, sem cancelar o que ja esta rodando.
+# Prevent race conditions between concurrent builds: one at a time, without cancelling ongoing runs.
 concurrency:
   group: gitops-deploy
   cancel-in-progress: false
 
-# Permissões necessárias para usar OIDC, publicar a branch de automação e abrir o PR.
-# Requer: Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".
+# Permissions required for OIDC, publishing the automation branch, and opening PRs.
+# Requires: Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".
 permissions:
   id-token: write
   contents: write
@@ -42,15 +42,15 @@ jobs:
     name: DevSecOps - IaC Security Scan (Checkov)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout do código
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Executar Checkov nas pastas Terraform e Kubernetes
+      - name: Run Checkov on Terraform and Kubernetes directories
         uses: bridgecrewio/checkov-action@master
         with:
           framework: terraform,kubernetes
           output_format: cli
-          soft_fail: true # Gera o relatório completo no log sem travar a pipeline experimental
+          soft_fail: true # Generates full report in log without failing experimental pipeline
 
   build-and-deploy:
     name: Build, Security Scan and GitOps Sync
@@ -58,36 +58,36 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout do código
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          # O fetch-depth: 1 é suficiente se não for precisar de histórico do git
+          # fetch-depth: 1 is sufficient without git history requirements
           fetch-depth: 1
 
-      - name: Configurar Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
           cache-dependency-path: apps/api/requirements*.txt
 
-      - name: Executar Testes Unitarios da API (Pytest)
+      - name: Run API Unit Tests (Pytest)
         run: |
           cd apps/api
           pip install -r requirements.txt -r requirements-dev.txt
           pytest test_main.py -v
 
-      - name: Configurar Credenciais AWS (OIDC)
+      - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::654654156336:role/GitHubActionsDeployRole
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login no Amazon ECR
+      - name: Log in to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build da Imagem Docker
+      - name: Build Docker Image
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -103,54 +103,53 @@ jobs:
         with:
           image-ref: ${{ steps.build-image.outputs.image }}
           format: 'table'
-          exit-code: '0' # Relatório informativo (use 1 para bloquear caso encontre CRITICAL)
+          exit-code: '0' # Informative report (use 1 to block if CRITICAL found)
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
 
-      - name: Push da imagem no Amazon ECR
+      - name: Push image to Amazon ECR
         env:
           FULL_IMAGE: ${{ steps.build-image.outputs.image }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          # Se a imagem ja existe no ECR (ex: em caso de Re-run), pula o push para respeitar a imutabilidade
+          # If image already exists in ECR (e.g., on re-run), skip push to respect immutability
           if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
-            echo "Imagem $FULL_IMAGE já existe no ECR. Pulando push (respeitando tag imutável)."
+            echo "Image $FULL_IMAGE already exists in ECR. Skipping push (respecting immutable tag)."
           else
             docker push "$FULL_IMAGE"
           fi
 
-      - name: Atualizar tag da imagem no Deployment
+      - name: Update image tag in Deployment manifest
         env:
           NEW_IMAGE: ${{ steps.build-image.outputs.image }}
         run: |
-          # Utiliza o sed para encontrar a linha da imagem e substituí-la.
-          # Isso assume que no seu deployment.yaml existe uma linha no formato: image: <url>
+          # Use sed to find image line and replace it
           sed -i -E "s|(image: ).*|\1$NEW_IMAGE|" ${{ env.MANIFEST_PATH }}
           
-      - name: Abrir/atualizar Pull Request para o ArgoCD
+      - name: Open/update Pull Request for ArgoCD
         env:
           GH_TOKEN: ${{ github.token }}
           NEW_IMAGE: ${{ steps.build-image.outputs.image }}
         run: |
           if git diff --quiet -- "$MANIFEST_PATH"; then
-            echo "Nenhuma alteracao no manifesto; nada a fazer."
+            echo "No changes in manifest; nothing to do."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # O merge so altera k8s/** (coberto por paths-ignore), entao nao gera novo build.
+          # Merging only touches k8s/** (covered by paths-ignore), preventing new build loops.
           git checkout -B "$DEPLOY_BRANCH"
           git add "$MANIFEST_PATH"
-          git commit -m "chore: atualiza imagem da api para ${GITHUB_SHA}"
+          git commit -m "chore: update api image to ${GITHUB_SHA}"
 
-          # Branch unica e descartavel: sempre reflete o build mais recente, evitando
-          # PRs conflitantes quando varios builds acontecem antes do merge.
+          # Single rolling branch: always reflects latest build, avoiding
+          # conflicting PRs when multiple builds happen before merge.
           git push --force origin "$DEPLOY_BRANCH"
 
-          TITLE="chore: atualiza imagem da api para ${GITHUB_SHA::7}"
-          BODY=$(printf 'Atualizacao automatica da imagem do deployment.\n\n- Imagem: `%s`\n- Commit de origem: %s\n- Workflow: %s/%s/actions/runs/%s' \
+          TITLE="chore: update api image to ${GITHUB_SHA::7}"
+          BODY=$(printf 'Automated deployment image update.\n\n- Image: `%s`\n- Source Commit: %s\n- Workflow: %s/%s/actions/runs/%s' \
             "$NEW_IMAGE" "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")
 
           if gh pr view "$DEPLOY_BRANCH" --json state --jq '.state' 2>/dev/null | grep -q '^OPEN$'; then
