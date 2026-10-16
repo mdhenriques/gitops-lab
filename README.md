@@ -6,13 +6,13 @@
 [![Terraform](https://img.shields.io/badge/terraform-v1.11+-844fba.svg?logo=terraform&logoColor=white)](https://www.terraform.io)
 [![AWS](https://img.shields.io/badge/AWS-Certified%20Architecture-232f3e.svg?logo=amazon-aws&logoColor=white)](https://aws.amazon.com)
 
-Ambiente completo de entrega contínua (**GitOps**) e segurança integrada (**DevSecOps**), desenhado seguindo os princípios de menor privilégio, segredos efêmeros, imutabilidade de imagens e validação contínua de políticas de admissão (*Policy-as-Code*).
+Ambiente completo de entrega contínua (**GitOps**) e segurança integrada (**DevSecOps**), desenhado seguindo os princípios de menor privilégio, segredos efêmeros, imutabilidade de imagens, governança de multi-tenancy e validação contínua de políticas de admissão (*Policy-as-Code*).
 
 ---
 
 ## 🏛️ Arquitetura da Solução
 
-O fluxo conecta a nuvem pública (**AWS**), esteiras de automação (**GitHub Actions**) e orquestração de containers (**Kubernetes & ArgoCD**):
+O fluxo conecta a nuvem pública (**AWS**), esteiras de automação com shift-left security (**GitHub Actions**) e orquestração de containers com governança (**Kubernetes & ArgoCD**):
 
 ```mermaid
 flowchart TD
@@ -21,38 +21,42 @@ flowchart TD
     end
 
     subgraph CI_Security_Pipeline["Pipeline DevSecOps (Shift-Left)"]
-        GHA -->|1. IaC SAST| CKV["Checkov (CIS Benchmarks)"]
-        GHA -->|2. OIDC AssumeRole| IAM["AWS IAM OIDC Role\n(Zero Hardcoded Keys)"]
-        GHA -->|3. Container Build| DOCKER["Docker Build\n(Non-Root UID 10001)"]
-        DOCKER -->|4. CVE Scan| TRIVY["Aqua Trivy (CRITICAL/HIGH)"]
-        TRIVY -->|5. Push Imutável| ECR[("Amazon ECR\n(Private & Tag Imutável)")]
-        GHA -->|6. GitOps Sync| PR["Automated Pull Request\n(k8s/base/deployment.yaml)"]
+        GHA -->|1. Testes Unitários| PYTEST["Pytest (Fail-Fast)"]
+        PYTEST -->|2. IaC SAST| CKV["Checkov (CIS Benchmarks)"]
+        CKV -->|3. OIDC AssumeRole| IAM["AWS IAM OIDC Role\n(Zero Hardcoded Keys)"]
+        IAM -->|4. Container Build| DOCKER["Docker Build\n(Non-Root UID 10001)"]
+        DOCKER -->|5. CVE Scan| TRIVY["Aqua Trivy (CVE Scan)"]
+        TRIVY -->|6. Push Imutável| ECR[("Amazon ECR\n(Lifecycle: 10 Imagens)")]
+        ECR -->|7. GitOps Sync| PR["Automated Pull Request\n(k8s/base/deployment.yaml)"]
     end
 
     subgraph GitOps_Control_Plane["GitOps & Orquestração (Kubernetes)"]
         PR -->|Merge| ARGO["ArgoCD Controller"]
-        ARGO -->|Reconcile Loop| K8S_APP["Application: gitops-api"]
+        ARGO -->|Governança| PROJ["AppProject: gitops-lab-project"]
+        PROJ -->|Reconcile Loop| K8S_APP["Application: gitops-api\n(Namespace: production)"]
         ARGO -->|Reconcile Loop| K8S_POL["Application: security-policies"]
+        ARGO -->|Reconcile Loop| K8S_MON["Application: monitoring"]
     end
 
     subgraph Security_And_Runtime["Execução Segura & Observabilidade"]
         K8S_POL -->|Enforce Policies| KYVERNO["Kyverno Admission Controller"]
-        KYVERNO -->|Bloqueia Root & Sem Recursos| PODS["Pods gitops-api (CIS Hardened)"]
+        KYVERNO -->|Bloqueia Root & Sem Recursos| PODS["Pods gitops-api (CIS Hardened)\n(readOnlyRootFilesystem: true)"]
         
         ESO["External Secrets Operator"] -->|"Token Gen 12h"| ECR
-        ESO -->|Lê Parâmetros| SSM[("AWS SSM Parameter Store\nwrite_only")]
+        ESO -->|Lê Parâmetros| SSM[("AWS SSM Parameter Store\n(write_only)")]
         ESO -->|Sincroniza| SECRETS["K8s Secrets: api-db-secret & ecr-cred"]
         SECRETS -.->|Injeta Credenciais| PODS
         
-        PODS -->|/metrics| PROM["Prometheus Monitoring"]
+        K8S_MON --> PROM["Prometheus Server"]
+        PODS -->|/metrics| PROM
     end
 
     classDef aws fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#fff;
     classDef k8s fill:#326CE5,stroke:#fff,stroke-width:2px,color:#fff;
     classDef sec fill:#E02424,stroke:#fff,stroke-width:2px,color:#fff;
     class ECR,SSM,IAM aws;
-    class ARGO,PODS,K8S_APP,K8S_POL k8s;
-    class CKV,TRIVY,KYVERNO,ESO sec;
+    class ARGO,PODS,K8S_APP,K8S_POL,K8S_MON,PROJ k8s;
+    class CKV,TRIVY,KYVERNO,ESO,PYTEST sec;
 ```
 
 ---
@@ -65,9 +69,11 @@ flowchart TD
 | **Armazenamento de Segredos** | Senhas gravadas em texto claro no `terraform.tfstate`. | **`ephemeral` + `value_wo`:** Senhas sensíveis geradas dinamicamente no SSM sem persistência no state do Terraform. *(Trade-off: credencial estática IAM usada apenas para viabilizar o lab local Kind; veja seção de Trade-offs).* |
 | **Token do ECR no K8s** | CronJob manual executando script bash ou secrets estáticos expirando em 12h. | **ESO ECRAuthorizationToken Generator:** O operador nativo renova os tokens a cada 30m de forma totalmente autônoma. |
 | **Ciclo de Atualização** | O bot de CI/CD commita diretamente na branch `master`. | **Automated Pull Requests:** A pipeline abre uma branch rolante com PR para auditoria e controle de merge. |
-| **Segurança no Pipeline** | Build e deploy direto sem checagem de vulnerabilidades. | **Shift-Left Security:** Varredura estática de IaC com **Checkov** e varredura de CVEs de container com **Aqua Trivy**. |
-| **Segurança de Runtime** | Containers rodando como `root` com privilégios padrão. | **Kyverno Policy-as-Code:** Bloqueio no Admission Webhook para containers sem limits ou tentando rodar como root. |
-| **Observabilidade** | Probes cegas ou liveness reiniciando pod em falha de dependência. | **Separação estrita Liveness (`/healthz`) vs. Readiness (`/readyz`)** + **Métricas OpenMetrics/Prometheus** (`/metrics`). |
+| **Segurança no Pipeline** | Build e deploy direto sem checagem de vulnerabilidades nem testes. | **Shift-Left Security:** Testes unitários com **Pytest** (fail-fast), varredura de IaC com **Checkov** e varredura de CVEs de container com **Aqua Trivy**. |
+| **Segurança de Runtime** | Containers rodando como `root` com filesystem gravável. | **CIS Hardening & Kyverno:** `readOnlyRootFilesystem: true`, usuário não-root numérico (UID 10001), drop de todas as capabilities e bloqueio no Admission Webhook para pods sem limites de CPU/memória. |
+| **Governança GitOps** | ArgoCD rodando todas as aplicações no projeto `default`. | **ArgoCD `AppProject` dedicado:** Whitelist restrita de repositórios Git, destinos de cluster/namespace (`production`) e bloqueio de criação arbitrária de recursos cluster-scoped. |
+| **Otimização de Custos (FinOps)** | Repositório ECR retendo imagens indefinidamente. | **ECR Lifecycle Policy:** Expiração automática de imagens mantendo estritamente as 10 mais recentes, evitando custos descontrolados de armazenamento. |
+| **Observabilidade & Saúde** | Probes cegas ou liveness reiniciando pod em falha de dependência. | **Separação estrita Liveness (`/healthz`) vs. Readiness (`/readyz`)** + **Métricas OpenMetrics/Prometheus** (`/metrics`). |
 
 ---
 
@@ -85,12 +91,12 @@ Este projeto foi construído para ser 100% reproduzível localmente via **Kind**
 
 ## 🛠️ Stack Tecnológica
 
-- **Cloud Provider:** AWS (ECR, SSM Parameter Store, IAM OIDC, S3 Backend com Lock Nativo)
-- **Infrastructure as Code (IaC):** Terraform >= 1.11 (HCL modular com stack bootstrap separado)
-- **Container & Runtime:** Docker (python:3.11-slim, non-root UID 10001), Kubernetes v1.30+ (Kind)
-- **GitOps Engine:** ArgoCD (Padrão declarativo com auto-heal e prune)
-- **Segurança & Políticas:** Checkov, Aqua Trivy, Kyverno Admission Controller, External Secrets Operator (ESO)
-- **Aplicação & Observabilidade:** Python 3.11, FastAPI, Uvicorn, Prometheus Instrumentator, Structured JSON Logs
+- **Cloud Provider:** AWS (ECR com Lifecycle Policy, SSM Parameter Store, IAM OIDC, S3 Backend com Lock Nativo)
+- **Infrastructure as Code (IaC):** Terraform >= 1.11 (HCL modular com `variables.tf` parametrizado e stack bootstrap isolado)
+- **Container & Runtime:** Docker (python:3.11-slim, non-root UID 10001, `readOnlyRootFilesystem: true`), Kubernetes v1.30+ (Kind multi-node: 1 control-plane, 2 workers)
+- **GitOps Engine:** ArgoCD (AppProject com governança, isolamento no namespace `production`, padrão declarativo com auto-heal e prune)
+- **Segurança & Políticas:** Checkov (SAST), Aqua Trivy (CVE Scanner), Kyverno Admission Controller, External Secrets Operator (ESO)
+- **Aplicação & Qualidade:** Python 3.11, FastAPI, Uvicorn, Pytest (testes unitários automatizados), Prometheus Instrumentator, Structured JSON Logs
 
 ---
 
@@ -102,26 +108,30 @@ Este projeto foi construído para ser 100% reproduzível localmente via **Kind**
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) e [Helm](https://helm.sh/)
 - Conta na AWS com permissões para criar recursos IAM, SSM e ECR
 
+---
+
 ### 2. Provisionamento da Infraestrutura AWS
 ```bash
 # 1. Provisionar o Bucket de Estado S3 com Hardening (State Bootstrap)
 cd terraform/bootstrap
-terraform init && terraform apply
+terraform init && terraform apply -auto-approve
 
-# 2. Provisionar os recursos principais (ECR, SSM, IAM OIDC Role)
+# 2. Provisionar os recursos principais (ECR com Lifecycle Policy, SSM, IAM OIDC Role)
 cd ..
-terraform init && terraform apply
+terraform init && terraform apply -auto-approve
 ```
 
 > [!NOTE]
 > O stack de bootstrap cria o bucket S3 do zero de forma declarativa. Caso você já possua um bucket pré-existente na sua conta AWS que deseje reutilizar, execute antes do apply: `terraform import aws_s3_bucket.terraform_state <nome-do-bucket>`.
 
+---
+
 ### 3. Inicialização do Cluster Kubernetes e Ferramentas Base
 ```bash
-# 1. Criar o cluster Kind multi-node
+# 1. Criar o cluster Kind multi-node (1 control-plane e 2 workers)
 kind create cluster --config kind-config.yaml --name gitops-lab
 
-# 2. Instalar o External Secrets Operator (versao fixada v2.12.0)
+# 2. Instalar o External Secrets Operator (versão fixada v2.12.0)
 helm repo add external-secrets https://charts.external-secrets.io
 helm repo update
 helm install external-secrets external-secrets/external-secrets \
@@ -129,25 +139,31 @@ helm install external-secrets external-secrets/external-secrets \
   -n external-secrets --create-namespace \
   -f k8s/eso-values.yaml
 
-# 3. Instalar o Kyverno Admission Controller (versao fixada 3.9.1)
+# 3. Instalar o Kyverno Admission Controller (versão fixada 3.9.1)
 helm repo add kyverno https://kyverno.github.io/kyverno/
 helm repo update
 helm install kyverno kyverno/kyverno \
   --version 3.9.1 \
   -n kyverno --create-namespace
 
-# 4. Instalar o ArgoCD (versao fixada v3.5.5)
+# 4. Instalar o ArgoCD (versão fixada v3.5.5)
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.5/manifests/install.yaml
 ```
 
+---
+
 ### 4. Configuração das Credenciais do ESO (One-time Bootstrap)
 Obtenha as credenciais geradas pelo Terraform e crie os secrets nos namespaces necessários:
 ```bash
-ESO_KEY=$(terraform output -raw eso_access_key_id)
-ESO_SECRET=$(terraform output -raw eso_secret_access_key)
+# Criar o namespace production da aplicação
+kubectl create namespace production
 
-# Criar no namespace do operador e no namespace production da aplicacao
+# Obter credenciais do stack terraform
+ESO_KEY=$(terraform -chdir=terraform output -raw eso_access_key_id)
+ESO_SECRET=$(terraform -chdir=terraform output -raw eso_secret_access_key)
+
+# Criar o Secret nos namespaces do operador e da aplicação
 for ns in external-secrets production; do
   kubectl create secret generic aws-secret \
     --from-literal=access-key-id="$ESO_KEY" \
@@ -156,48 +172,96 @@ for ns in external-secrets production; do
 done
 ```
 
+---
+
 ### 5. Ativar as Aplicações no ArgoCD
 ```bash
 # 1. Aplica o AppProject com governança e restrições de segurança
 kubectl apply -f argocd/app-project.yaml
 
-# 2. Aplica os manifestos declarativos das aplicações, políticas e monitoramento
+# 2. Aplica as aplicações declarativas (Workload, Políticas e Monitoramento)
 kubectl apply -f argocd/application.yaml
 kubectl apply -f argocd/security-policies-app.yaml
 kubectl apply -f argocd/monitoring-app.yaml
 ```
 
+> [!TIP]
+> Caso seja a primeira execução em uma conta AWS limpa com o repositório ECR recém-criado, acione o workflow **CI/CD - Build and GitOps Sync** no GitHub Actions para compilar a primeira imagem e aprove o Pull Request automatizado aberto pelo bot.
+
 ---
 
 ## 🔍 Validação e Testes Práticos
 
-### Testando a Resiliência das Políticas de Segurança (Kyverno)
+### 1. Testando a Resiliência das Políticas de Segurança (Kyverno)
 Tente executar um container padrão que viole as regras de não-root ou de ausência de limites de recursos:
 ```bash
 kubectl run rogue-pod --image=nginx -n production
 ```
-**Resultado esperado:**
+**Resultado esperado (bloqueio no Admission Webhook):**
 ```text
-Error from server: admission webhook "validate.kyverno.svc-fail" denied the request:
-resource Pod/production/rogue-pod was blocked due to the following policies:
-- check-privilege-escalation: Escalada de privilégios é proibida!
-- check-run-as-non-root: Containers devem rodar como non-root!
-- require-resources: É obrigatório definir limites de CPU e Memória!
+Error from server: admission webhook "validate.kyverno.svc-fail" denied the request: 
+
+resource Pod/production/rogue-pod was blocked due to the following policies 
+
+disallow-root-and-privileged:
+  check-privilege-escalation: 'validation error: ALERTA DE SEGURANCA: O Pod foi bloqueado! Escalada de privilegios e proibida (securityContext.allowPrivilegeEscalation: false).'
+  check-run-as-non-root: 'validation error: ALERTA DE SEGURANCA: O Pod foi bloqueado! Containers devem rodar como non-root (securityContext.runAsNonRoot: true).'
+require-resources:
+  validate-resources: 'validation error: ALERTA DE SEGURANCA: O container foi bloqueado! E obrigatorio definir limites de CPU e Memoria (resources.requests e resources.limits).'
 ```
 
-### Testando a API e Observabilidade
+---
+
+### 2. Testando a API e Injeção Segura de Segredos
+Encaminhe a porta do serviço da API no namespace `production`:
 ```bash
-# Encaminhar porta da API
-kubectl port-forward svc/gitops-api-svc 8080:80 -n production
+kubectl port-forward svc/gitops-api-svc 8000:80 -n production
+```
 
-# 1. Consultar endpoint com segredo seguro injetado via SSM
-curl http://localhost:8080/
+- **Endpoint Raiz** (`http://localhost:8000/`): Valida que o segredo foi recuperado do AWS SSM via ESO sem expor a senha em texto claro:
+  ```json
+  {
+    "message": "GitOps operando em tempo real com AWS ECR, ArgoCD e Observabilidade!",
+    "database_configured": true,
+    "db_status": "Conectado com sucesso (Injetado via AWS SSM Parameter Store)"
+  }
+  ```
+- **Liveness Probe** (`http://localhost:8000/healthz`): Responde `{"status": "alive"}` para garantir que o processo não travou.
+- **Readiness Probe** (`http://localhost:8000/readyz`): Responde `{"status": "ready"}` apenas quando as dependências estão injetadas.
+- **Métricas Prometheus** (`http://localhost:8000/metrics`): Exposição de métricas de requisição e latência no formato OpenMetrics.
 
-# 2. Consultar métricas do Prometheus
-curl http://localhost:8080/metrics
+---
+
+### 3. Acessando os Dashboards Web
+
+#### ArgoCD Dashboard
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+```
+- Acesse: `https://localhost:8080` (Usuário: `admin`)
+- Obter senha inicial:
+  ```bash
+  kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d && echo ""
+  ```
+
+#### Prometheus Dashboard
+```bash
+kubectl port-forward svc/prometheus-server -n monitoring 9090:80
+```
+- Acesse: `http://localhost:9090`
+- Pesquise pela métrica `http_requests_total` na aba **Graph** para visualizar as requisições em tempo real.
+
+---
+
+### 4. Executando os Testes Unitários Localmente
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r apps/api/requirements.txt -r apps/api/requirements-dev.txt
+pytest apps/api/test_main.py -v
 ```
 
 ---
 
 ## 📄 Licença
-Distribuído sob a licença MIT. Veja `LICENSE` para mais informações.
+Distribuído sob a licença MIT. Veja [LICENSE](LICENSE) para mais informações.
