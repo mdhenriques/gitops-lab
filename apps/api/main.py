@@ -5,7 +5,7 @@ import time
 from fastapi import FastAPI, Response, status
 from prometheus_fastapi_instrumentator import Instrumentator
 
-# Configuração de Logs Estruturados (Formato JSON para observabilidade)
+# Structured Logs (JSON format for observability)
 class JSONFormatter(logging.Formatter):
     def format(self, record):
         log_record = {
@@ -24,43 +24,43 @@ logger.handlers = [handler]
 
 app = FastAPI(
     title="GitOps DevSecOps API",
-    description="API de Produção com Observabilidade Prometheus e Práticas DevSecOps",
+    description="Production API with Prometheus for Observability and DevSecOps practices",
     version="1.1.0"
 )
 
-# Instrumentação nativa para expor métricas no padrão Prometheus (/metrics)
+# Instrumentator for Prometheus metrics
 Instrumentator().instrument(app).expose(app)
 
 @app.get("/")
 def read_root():
     db_status = os.getenv("DB_CONNECTION")
-    configured = bool(db_status and db_status != "Desconectado")
+    configured = bool(db_status and not db_status.startswith("Disconnected") and not db_status.startswith("Desconectado"))
     
-    logger.info("Requisicao processada com sucesso no endpoint raiz.")
+    logger.info("Request processed successfully on root endpoint.")
     return {
-        "message": "GitOps operando em tempo real com AWS ECR, ArgoCD e Observabilidade!",
+        "message": "GitOps operating in real time with AWS ECR, ArgoCD, and Observability!",
         "database_configured": configured,
-        "db_status": "Conectado com sucesso (Injetado via AWS SSM Parameter Store)" if configured else "Desconectado (Aguardando AWS Secrets)"
+        "db_status": "Connected successfully (Injected via AWS SSM Parameter Store)" if configured else "Disconnected (Awaiting AWS Secrets)"
     }
 
 @app.get("/healthz")
 def liveness():
     """
-    Liveness Probe: Valida se o processo e event-loop da aplicacao estao vivos.
-    Se falhar, o Kubernetes reinicia o container para recuperar de deadlocks.
+    Liveness Probe: Verifies that the application process and event loop are alive.
+    If it fails, Kubernetes restarts the container to recover from deadlocks.
     """
     return {"status": "alive"}
 
 @app.get("/readyz")
 def readiness(response: Response):
     """
-    Readiness Probe: Valida se a aplicacao esta pronta para receber trafego.
-    Verifica se configuracoes essenciais e conexoes foram injetadas.
-    Se falhar, o Kubernetes apenas remove o pod dos endpoints de trafego (sem reiniciar).
+    Readiness Probe: Verifies that the application is ready to accept user traffic.
+    Validates that essential configurations and connections have been injected.
+    If it fails, Kubernetes removes the pod from Service traffic endpoints without restarting.
     """
     db_status = os.getenv("DB_CONNECTION")
-    if not db_status or db_status.startswith("Desconectado"):
-        logger.warning("Readiness probe falhou: DB_CONNECTION ausente ou desconectado.")
+    if not db_status or db_status.startswith("Disconnected") or db_status.startswith("Desconectado"):
+        logger.warning("Readiness probe failed: DB_CONNECTION missing or disconnected.")
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "not_ready", "reason": "DB_CONNECTION not configured"}
     

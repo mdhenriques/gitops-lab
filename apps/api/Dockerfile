@@ -1,28 +1,28 @@
-# Usar uma imagem base oficial e enxuta do Python
+# Use official lightweight Python base image
 FROM python:3.11-slim
 
-# Evitar que o Python grave arquivos .pyc e forçar o log direto no terminal (stdout)
+# Prevent Python from writing .pyc files and force unbuffered stdout/stderr logging
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Criar um usuário não-root com UID numérico explícito (boa prática CIS Benchmark)
+# Create non-root user with explicit numeric UID (CIS Benchmark best practice)
 RUN adduser --disabled-password --gecos "" --uid 10001 appuser
 
-# Definir o diretório de trabalho
+# Set working directory
 WORKDIR /app
 
-# Copiar os arquivos de dependência e instalar
+# Copy dependency files and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar o código da aplicação com ownership direto
+# Copy application code with direct ownership
 COPY --chown=appuser:appuser main.py .
 
-# Trocar para o usuário restrito pelo UID numérico
+# Switch to restricted user by numeric UID
 USER 10001
 
-# Expor a porta que a aplicação vai rodar
+# Expose application port
 EXPOSE 8000
 
-# Comando para iniciar o servidor
+# Command to start the server
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
