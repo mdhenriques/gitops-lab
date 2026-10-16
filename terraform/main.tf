@@ -111,6 +111,7 @@ resource "aws_iam_user_policy_attachment" "eso_attach" {
 resource "aws_ecr_repository" "api_repo" {
   name                 = var.ecr_repository_name
   image_tag_mutability = "IMMUTABLE"
+  force_delete         = true
 
   image_scanning_configuration {
     scan_on_push = true
