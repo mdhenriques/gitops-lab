@@ -12,12 +12,9 @@ spec:
   sourceRepos:
     - "https://github.com/mdhenriques/gitops-lab.git"
 
-  # Authorized destinations (production for the workload, default allowed for migration pruning)
+  # Authorized destinations (production for the workload)
   destinations:
     - namespace: production
-      server: https://kubernetes.default.svc
-      name: in-cluster
-    - namespace: default
       server: https://kubernetes.default.svc
       name: in-cluster
 
