@@ -1,4 +1,4 @@
-# Limites para o pod principal
+# Limits for the main controller pod
 resources:
   requests:
     cpu: 10m
@@ -7,7 +7,7 @@ resources:
     cpu: 50m
     memory: 128Mi
 
-# Limites para o pod do cert-controller
+# Limits for cert-controller pod
 certController:
   resources:
     requests:
@@ -17,7 +17,7 @@ certController:
       cpu: 50m
       memory: 128Mi
 
-# Limites para o pod do webhook
+# Limits for webhook pod
 webhook:
   resources:
     requests:

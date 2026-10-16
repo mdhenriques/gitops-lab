@@ -18,7 +18,7 @@ spec:
         prometheus.io/path: "/metrics"
         prometheus.io/port: "8000"
     spec:
-      # Boas praticas de seguranca (CIS Benchmark & Checkov)
+      # Security best practices (CIS Benchmark & Checkov)
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
