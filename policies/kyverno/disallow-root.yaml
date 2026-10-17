@@ -32,7 +32,7 @@ spec:
           - monitoring
           - external-secrets
     validate:
-      message: "ALERTA DE SEGURANCA: O Pod foi bloqueado! Containers devem rodar como non-root (securityContext.runAsNonRoot: true)."
+      message: "SECURITY ALERT: Pod blocked! Containers must run as non-root (securityContext.runAsNonRoot: true)."
       pattern:
         spec:
           =(securityContext):
@@ -59,7 +59,7 @@ spec:
           - monitoring
           - external-secrets
     validate:
-      message: "ALERTA DE SEGURANCA: O Pod foi bloqueado! Escalada de privilegios e proibida (securityContext.allowPrivilegeEscalation: false)."
+      message: "SECURITY ALERT: Pod blocked! Privilege escalation is forbidden (securityContext.allowPrivilegeEscalation: false)."
       pattern:
         spec:
           containers:

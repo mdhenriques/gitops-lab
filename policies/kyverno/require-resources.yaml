@@ -31,7 +31,7 @@ spec:
           - monitoring
           - external-secrets
     validate:
-      message: "ALERTA DE SEGURANCA: O container foi bloqueado! E obrigatorio definir limites de CPU e Memoria (resources.requests e resources.limits)."
+      message: "SECURITY ALERT: Container blocked! CPU and Memory limits and requests are required (resources.requests and resources.limits)."
       pattern:
         spec:
           containers:
