@@ -1,21 +1,21 @@
 # ==========================================
-# BOOTSTRAP: bucket S3 do Terraform state
+# BOOTSTRAP: Terraform State S3 Bucket
 # ==========================================
-# Stack separado do ../main.tf para resolver o problema "ovo e galinha": o bucket
-# que guarda o state do stack principal nao pode ser gerenciado por esse mesmo state.
+# Stack separated from ../main.tf to solve the "chicken and egg" problem:
+# the bucket storing the main stack state cannot be managed by that same state.
 #
-# Este stack usa state LOCAL (terraform.tfstate, ignorado pelo .gitignore). Ele nao
-# contem segredos e e responsavel por provisionar o bucket S3 de forma declarativa
-# com politicas estritas de seguranca (SSE-S3, TLS Deny, Versionamento, Lifecycle).
+# This stack uses LOCAL state (terraform.tfstate, ignored by .gitignore). It contains
+# no secrets and is responsible for declaratively provisioning the S3 bucket with
+# strict security policies (SSE-S3, TLS Deny, Versioning, Lifecycle).
 #
-# Caso deseje reaproveitar um bucket S3 ja existente na AWS, importe-o uma vez com:
-#   terraform import aws_s3_bucket.terraform_state <nome-do-bucket>
+# If you want to reuse an existing S3 bucket in AWS, import it once with:
+#   terraform import aws_s3_bucket.terraform_state <bucket-name>
 #
-# Ordem de execucao (uma unica vez):
+# Execution order (one-time operation):
 #   1. cd terraform/bootstrap && terraform init && terraform apply
-#      (cria o bucket S3 com o hardening completo)
+#      (creates the S3 bucket with complete hardening)
 #   2. cd ../ && terraform init && terraform apply
-#      (provisiona os recursos principais com backend S3 remoto)
+#      (provisions main resources using remote S3 backend)
 
 terraform {
   required_version = ">= 1.11.0"
@@ -42,7 +42,7 @@ locals {
 resource "aws_s3_bucket" "terraform_state" {
   bucket = local.state_bucket_name
 
-  # Protege contra "terraform destroy"/remocao acidental do bucket com todo o state.
+  # Protects against "terraform destroy" / accidental deletion of bucket holding all state.
   lifecycle {
     prevent_destroy = true
   }
@@ -56,7 +56,7 @@ resource "aws_s3_bucket_versioning" "terraform_state" {
   }
 }
 
-# Criptografia em repouso declarada explicitamente (SSE-S3).
+# Server-side encryption explicitly declared (SSE-S3).
 resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -68,7 +68,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" 
   }
 }
 
-# Bloqueio total de acesso publico (ACLs e policies publicas).
+# Block all public access (public ACLs and policies).
 resource "aws_s3_bucket_public_access_block" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -78,7 +78,7 @@ resource "aws_s3_bucket_public_access_block" "terraform_state" {
   restrict_public_buckets = true
 }
 
-# Desabilita ACLs: o dono do bucket e sempre o dono dos objetos.
+# Disable ACLs: bucket owner is always object owner.
 resource "aws_s3_bucket_ownership_controls" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -87,7 +87,7 @@ resource "aws_s3_bucket_ownership_controls" "terraform_state" {
   }
 }
 
-# Exige TLS em qualquer acesso ao bucket.
+# Enforce TLS for all bucket access.
 resource "aws_s3_bucket_policy" "deny_insecure_transport" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -112,15 +112,15 @@ resource "aws_s3_bucket_policy" "deny_insecure_transport" {
     ]
   })
 
-  # Evita conflito de operacoes concorrentes de policy no mesmo bucket.
+  # Prevent race conditions with concurrent policy operations on the same bucket.
   depends_on = [aws_s3_bucket_public_access_block.terraform_state]
 }
 
-# Mantem o historico de versoes do state, mas nao indefinidamente.
+# Retain state version history, but not indefinitely.
 resource "aws_s3_bucket_lifecycle_configuration" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
 
-  # A configuracao de lifecycle exige versionamento ja habilitado.
+  # Lifecycle configuration requires versioning already enabled.
   depends_on = [aws_s3_bucket_versioning.terraform_state]
 
   rule {
@@ -141,5 +141,5 @@ resource "aws_s3_bucket_lifecycle_configuration" "terraform_state" {
 
 output "state_bucket_name" {
   value       = aws_s3_bucket.terraform_state.id
-  description = "Bucket usado pelo backend S3 do stack principal"
+  description = "Bucket used by S3 remote backend in main stack"
 }
