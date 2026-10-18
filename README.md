@@ -15,34 +15,37 @@ Ambiente completo de entrega contínua (**GitOps**) e segurança integrada (**De
 O fluxo conecta a nuvem pública (**AWS**), esteiras de automação com shift-left security (**GitHub Actions**) e orquestração de containers com governança (**Kubernetes & ArgoCD**):
 
 ```mermaid
-flowchart TD
-    subgraph Developer_Workflow["Fluxo do Desenvolvedor"]
-        DEV["Engenheiro / Git Push"] -->|Push na master| GHA["GitHub Actions CI/CD"]
+flowchart LR
+    subgraph S1["1. Desenvolvimento"]
+        DEV["Engenheiro / Git Push"] -->|Push master| GHA["GitHub Actions CI"]
     end
 
-    subgraph CI_Security_Pipeline["Pipeline DevSecOps (Shift-Left)"]
-        GHA -->|1. Testes Unitários| PYTEST["Pytest (Fail-Fast)"]
-        PYTEST -->|2. IaC SAST| CKV["Checkov (CIS Benchmarks)"]
-        CKV -->|3. OIDC AssumeRole| IAM["AWS IAM OIDC Role\n(Zero Hardcoded Keys)"]
-        IAM -->|4. Container Build| DOCKER["Docker Build\n(Non-Root UID 10001)"]
-        DOCKER -->|5. CVE Scan| TRIVY["Aqua Trivy (CVE Scan)"]
-        TRIVY -->|6. Push Imutável| ECR[("Amazon ECR\n(Lifecycle: 10 Imagens)")]
-        ECR -->|7. GitOps Sync| PR["Automated Pull Request\n(k8s/base/deployment.yaml)"]
+    subgraph S2["2. Pipeline DevSecOps"]
+        direction TB
+        GHA -->|1. Testes| PYTEST["Pytest (Fail-Fast)"]
+        PYTEST -->|2. SAST| CKV["Checkov (CIS)"]
+        CKV -->|3. OIDC| IAM["AWS IAM OIDC Role\n(Zero Static Keys)"]
+        IAM -->|4. Build| DOCKER["Docker Build\n(Non-Root UID 10001)"]
+        DOCKER -->|5. CVE Scan| TRIVY["Aqua Trivy (CVEs)"]
+        TRIVY -->|6. Push| ECR[("Amazon ECR\n(10 Imagens Max)")]
+        ECR -->|7. Auto PR| PR["Automated Pull Request\n(k8s/base/deployment.yaml)"]
     end
 
-    subgraph GitOps_Control_Plane["GitOps & Orquestração (Kubernetes)"]
+    subgraph S3["3. GitOps Control Plane"]
+        direction TB
         PR -->|Merge| ARGO["ArgoCD Controller"]
         ARGO -->|Governança| PROJ["AppProject: gitops-lab-project"]
-        PROJ -->|Reconcile Loop| K8S_APP["Application: gitops-api\n(Namespace: production)"]
-        ARGO -->|Reconcile Loop| K8S_POL["Application: security-policies"]
-        ARGO -->|Reconcile Loop| K8S_MON["Application: monitoring"]
+        PROJ -->|Reconcile| K8S_APP["Application: gitops-api\n(Namespace: production)"]
+        PROJ -->|Reconcile| K8S_POL["Application: security-policies"]
+        PROJ -->|Reconcile| K8S_MON["Application: monitoring"]
     end
 
-    subgraph Security_And_Runtime["Execução Segura & Observabilidade"]
+    subgraph S4["4. Runtime K8s & Observabilidade"]
+        direction TB
         K8S_POL -->|Enforce Policies| KYVERNO["Kyverno Admission Controller"]
-        KYVERNO -->|Bloqueia Root & Sem Recursos| PODS["Pods gitops-api (CIS Hardened)\n(readOnlyRootFilesystem: true)"]
+        KYVERNO -->|Bloqueia Root/NoLimits| PODS["Pods gitops-api (CIS Hardened)\n(readOnlyRootFilesystem: true)"]
         
-        ESO["External Secrets Operator"] -->|"Token Gen 12h"| ECR
+        ESO["External Secrets Operator"] -->|Token Gen 12h| ECR
         ESO -->|Lê Parâmetros| SSM[("AWS SSM Parameter Store\n(write_only)")]
         ESO -->|Sincroniza| SECRETS["K8s Secrets: api-db-secret & ecr-cred"]
         SECRETS -.->|Injeta Credenciais| PODS
@@ -55,7 +58,7 @@ flowchart TD
     classDef k8s fill:#326CE5,stroke:#fff,stroke-width:2px,color:#fff;
     classDef sec fill:#E02424,stroke:#fff,stroke-width:2px,color:#fff;
     class ECR,SSM,IAM aws;
-    class ARGO,PODS,K8S_APP,K8S_POL,K8S_MON,PROJ k8s;
+    class ARGO,PODS,K8S_APP,K8S_POL,K8S_MON,PROJ,PROM k8s;
     class CKV,TRIVY,KYVERNO,ESO,PYTEST sec;
 ```
 
