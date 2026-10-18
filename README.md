@@ -204,10 +204,10 @@ Error from server: admission webhook "validate.kyverno.svc-fail" denied the requ
 resource Pod/production/rogue-pod was blocked due to the following policies 
 
 disallow-root-and-privileged:
-  check-privilege-escalation: 'validation error: ALERTA DE SEGURANCA: O Pod foi bloqueado! Escalada de privilegios e proibida (securityContext.allowPrivilegeEscalation: false).'
-  check-run-as-non-root: 'validation error: ALERTA DE SEGURANCA: O Pod foi bloqueado! Containers devem rodar como non-root (securityContext.runAsNonRoot: true).'
+  check-privilege-escalation: 'validation error: SECURITY ALERT: Pod blocked! Privilege escalation is forbidden (securityContext.allowPrivilegeEscalation: false).'
+  check-run-as-non-root: 'validation error: SECURITY ALERT: Pod blocked! Containers must run as non-root (securityContext.runAsNonRoot: true).'
 require-resources:
-  validate-resources: 'validation error: ALERTA DE SEGURANCA: O container foi bloqueado! E obrigatorio definir limites de CPU e Memoria (resources.requests e resources.limits).'
+  validate-resources: 'validation error: SECURITY ALERT: Container blocked! CPU and Memory limits and requests are required (resources.requests and resources.limits).'
 ```
 
 ---
@@ -221,9 +221,9 @@ kubectl port-forward svc/gitops-api-svc 8000:80 -n production
 - **Endpoint Raiz** (`http://localhost:8000/`): Valida que o segredo foi recuperado do AWS SSM via ESO sem expor a senha em texto claro:
   ```json
   {
-    "message": "GitOps operando em tempo real com AWS ECR, ArgoCD e Observabilidade!",
+    "message": "GitOps operating in real time with AWS ECR, ArgoCD, and Observability!",
     "database_configured": true,
-    "db_status": "Conectado com sucesso (Injetado via AWS SSM Parameter Store)"
+    "db_status": "Connected successfully (Injected via AWS SSM Parameter Store)"
   }
   ```
 - **Liveness Probe** (`http://localhost:8000/healthz`): Responde `{"status": "alive"}` para garantir que o processo não travou.
