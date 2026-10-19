@@ -113,6 +113,22 @@ Este projeto foi construído para ser 100% reproduzível localmente via **Kind**
 
 ---
 
+### ⚙️ Atenção ao Clonar ou Fazer Fork (Customização Obrigatória)
+
+> [!IMPORTANT]
+> Caso você faça um **Fork** deste repositório para a sua própria conta do GitHub para rodar no seu laboratório, **é obrigatório atualizar as referências de usuário/URL** para que o OIDC da AWS e a governança do ArgoCD autorizem suas esteiras e aplicações:
+>
+> 1. [terraform/variables.tf](terraform/variables.tf) (variável `github_repo_claim`): Autoriza o GitHub Actions do seu fork a assumir a Role do IAM via OIDC.
+> 2. [argocd/app-project.yaml](argocd/app-project.yaml) (`sourceRepos`): Whitelist do ArgoCD que autoriza ler manifests do seu fork.
+> 3. [argocd/application.yaml](argocd/application.yaml) e [argocd/security-policies-app.yaml](argocd/security-policies-app.yaml) (`repoURL`): Apontam para o seu repositório no GitHub.
+>
+> 💡 **Dica rápida:** Você pode atualizar todas as referências de uma só vez executando o comando abaixo na raiz do projeto (substituindo `SEU_USUARIO` pelo seu username do GitHub):
+> ```bash
+> sed -i 's/mdhenriques/SEU_USUARIO/g' terraform/variables.tf argocd/*.yaml
+> ```
+
+---
+
 ### 2. Provisionamento da Infraestrutura AWS
 ```bash
 # 1. Provisionar o Bucket de Estado S3 com Hardening (State Bootstrap)
