@@ -14,53 +14,10 @@ Ambiente completo de entrega contínua (**GitOps**) e segurança integrada (**De
 
 O fluxo conecta a nuvem pública (**AWS**), esteiras de automação com shift-left security (**GitHub Actions**) e orquestração de containers com governança (**Kubernetes & ArgoCD**):
 
-```mermaid
-flowchart LR
-    subgraph S1["1. Desenvolvimento"]
-        DEV["Engenheiro / Git Push"] -->|Push master| GHA["GitHub Actions CI"]
-    end
+<p align="center">
+  <img src="docs/assets/architecture.svg" alt="Arquitetura da Solução" width="100%">
+</p>
 
-    subgraph S2["2. Pipeline DevSecOps"]
-        direction TB
-        GHA -->|1. Testes| PYTEST["Pytest (Fail-Fast)"]
-        PYTEST -->|2. SAST| CKV["Checkov (CIS)"]
-        CKV -->|3. OIDC| IAM["AWS IAM OIDC Role\n(Zero Static Keys)"]
-        IAM -->|4. Build| DOCKER["Docker Build\n(Non-Root UID 10001)"]
-        DOCKER -->|5. CVE Scan| TRIVY["Aqua Trivy (CVEs)"]
-        TRIVY -->|6. Push| ECR[("Amazon ECR\n(10 Imagens Max)")]
-        ECR -->|7. Auto PR| PR["Automated Pull Request\n(k8s/base/deployment.yaml)"]
-    end
-
-    subgraph S3["3. GitOps Control Plane"]
-        direction TB
-        PR -->|Merge| ARGO["ArgoCD Controller"]
-        ARGO -->|Governança| PROJ["AppProject: gitops-lab-project"]
-        PROJ -->|Reconcile| K8S_APP["Application: gitops-api\n(Namespace: production)"]
-        PROJ -->|Reconcile| K8S_POL["Application: security-policies"]
-        PROJ -->|Reconcile| K8S_MON["Application: monitoring"]
-    end
-
-    subgraph S4["4. Runtime K8s & Observabilidade"]
-        direction TB
-        K8S_POL -->|Enforce Policies| KYVERNO["Kyverno Admission Controller"]
-        KYVERNO -->|Bloqueia Root/NoLimits| PODS["Pods gitops-api (CIS Hardened)\n(readOnlyRootFilesystem: true)"]
-        
-        ESO["External Secrets Operator"] -->|Token Gen 12h| ECR
-        ESO -->|Lê Parâmetros| SSM[("AWS SSM Parameter Store\n(write_only)")]
-        ESO -->|Sincroniza| SECRETS["K8s Secrets: api-db-secret & ecr-cred"]
-        SECRETS -.->|Injeta Credenciais| PODS
-        
-        K8S_MON --> PROM["Prometheus Server"]
-        PODS -->|/metrics| PROM
-    end
-
-    classDef aws fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#fff;
-    classDef k8s fill:#326CE5,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef sec fill:#E02424,stroke:#fff,stroke-width:2px,color:#fff;
-    class ECR,SSM,IAM aws;
-    class ARGO,PODS,K8S_APP,K8S_POL,K8S_MON,PROJ,PROM k8s;
-    class CKV,TRIVY,KYVERNO,ESO,PYTEST sec;
-```
 
 ---
 
