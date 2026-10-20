@@ -62,14 +62,6 @@ Este projeto foi construído para ser 100% reproduzível localmente via **Kind**
 
 ## 🚀 Como Reproduzir o Ambiente Localmente
 
-### 1. Pré-requisitos
-- [Docker](https://docs.docker.com/get-docker/) e [Kind](https://kind.sigs.k8s.io/) instalados
-- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.11
-- [kubectl](https://kubernetes.io/docs/tasks/tools/) e [Helm](https://helm.sh/)
-- Conta na AWS com permissões para criar recursos IAM, SSM e ECR
-
----
-
 ### ⚠️ Passo 0: Fork Obrigatório (Não utilize `git clone` direto)
 
 > [!WARNING]
@@ -106,6 +98,14 @@ Este projeto foi construído para ser 100% reproduzível localmente via **Kind**
 >      default = "repo:SEU_USUARIO@SEU_USER_ID/gitops-lab@SEU_REPO_ID:ref:refs/heads/master"
 >    }
 >    ```
+
+---
+
+### 1. Pré-requisitos
+- [Docker](https://docs.docker.com/get-docker/) e [Kind](https://kind.sigs.k8s.io/) instalados
+- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.11
+- [kubectl](https://kubernetes.io/docs/tasks/tools/) e [Helm](https://helm.sh/)
+- Conta na AWS com permissões para criar recursos IAM, SSM e ECR
 
 ---
 
