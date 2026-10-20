@@ -70,19 +70,42 @@ Este projeto foi construído para ser 100% reproduzível localmente via **Kind**
 
 ---
 
-### ⚙️ Atenção ao Clonar ou Fazer Fork (Customização Obrigatória)
+### ⚠️ Passo 0: Fork Obrigatório (Não utilize `git clone` direto)
 
-> [!IMPORTANT]
-> Caso você faça um **Fork** deste repositório para a sua própria conta do GitHub para rodar no seu laboratório, **é obrigatório atualizar as referências de usuário/URL** para que o OIDC da AWS e a governança do ArgoCD autorizem suas esteiras e aplicações:
->
-> 1. [terraform/variables.tf](terraform/variables.tf) (variável `github_repo_claim`): Autoriza o GitHub Actions do seu fork a assumir a Role do IAM via OIDC.
-> 2. [argocd/app-project.yaml](argocd/app-project.yaml) (`sourceRepos`): Whitelist do ArgoCD que autoriza ler manifests do seu fork.
-> 3. [argocd/application.yaml](argocd/application.yaml) e [argocd/security-policies-app.yaml](argocd/security-policies-app.yaml) (`repoURL`): Apontam para o seu repositório no GitHub.
->
-> 💡 **Dica rápida:** Você pode atualizar todas as referências de uma só vez executando o comando abaixo na raiz do projeto (substituindo `SEU_USUARIO` pelo seu username do GitHub):
-> ```bash
-> sed -i 's/mdhenriques/SEU_USUARIO/g' terraform/variables.tf argocd/*.yaml
-> ```
+> [!WARNING]
+> **Fazer `git clone` diretamente deste repositório matriz NÃO funcionará no seu laboratório!**
+> 
+> Este projeto opera sob o modelo de **GitOps e Automação Contínua (CI/CD)**. Para que o ciclo funcione de ponta a ponta:
+> - Você precisa de permissões de escrita para que a esteira do GitHub Actions compile as imagens e abra Pull Requests automatizados.
+> - A Role IAM via OIDC na sua conta AWS só autorizará execuções originadas do seu próprio repositório.
+> - O ArgoCD local precisa monitorar e reconciliar um repositório sob o seu total controle.
+> 
+> **Passo a passo obrigatório:**
+> 1. Clique no botão **Fork** (no canto superior direito desta página do GitHub) para criar uma cópia na sua conta.
+> 2. Clone o **seu fork** para a sua máquina local:
+>    ```bash
+>    git clone https://github.com/SEU_USUARIO/gitops-lab.git
+>    cd gitops-lab
+>    ```
+> 3. Atualize as URLs nos manifestos do ArgoCD para apontarem para o seu fork:
+>    ```bash
+>    sed -i 's/mdhenriques/SEU_USUARIO/g' argocd/*.yaml
+>    ```
+> 4. Configure a claim OIDC no [terraform/variables.tf](terraform/variables.tf) (variável `github_oidc_sub`):  
+>    O GitHub Actions exige o formato de IDs imutáveis (`repo:USER@ID/REPO@ID:ref:refs/heads/master`). Para descobrir os IDs numéricos da sua conta e do seu repositório forkeado, execute:
+>    ```bash
+>    # 1. Obter o ID numérico da sua conta GitHub:
+>    curl -s https://api.github.com/users/SEU_USUARIO | grep -m1 '"id":'
+>    
+>    # 2. Obter o ID numérico do seu repositório gitops-lab:
+>    curl -s https://api.github.com/repos/SEU_USUARIO/gitops-lab | grep -m1 '"id":'
+>    ```
+>    Substitua o valor em `terraform/variables.tf`:
+>    ```hcl
+>    variable "github_oidc_sub" {
+>      default = "repo:SEU_USUARIO@SEU_USER_ID/gitops-lab@SEU_REPO_ID:ref:refs/heads/master"
+>    }
+>    ```
 
 ---
 
