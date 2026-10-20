@@ -2,6 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: gitops-api-svc
+  namespace: production
 spec:
   selector:
     app: gitops-api
