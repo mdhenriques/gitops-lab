@@ -1,0 +1,28 @@
+# ArgoCD Application that synchronizes k8s/base with the cluster.
+# Placed OUTSIDE of k8s/base intentionally: ArgoCD must not manage itself
+# within the synchronized path (prevents loop and accidental pruning).
+#
+# Bootstrap (one-time command after installing ArgoCD):
+#   kubectl apply -f argocd/application.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gitops-api
+  namespace: argocd
+spec:
+  project: gitops-lab-project
+  source:
+    repoURL: https://github.com/mdhenriques/gitops-lab.git
+    targetRevision: master
+    path: k8s/base
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: production
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
