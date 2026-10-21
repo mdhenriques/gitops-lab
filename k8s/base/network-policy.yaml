@@ -1,0 +1,47 @@
+# NetworkPolicy restricting ingress and egress traffic for gitops-api pods
+# Enforces least-privilege networking and prevents lateral movement (DevSecOps)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gitops-api-netpol
+  namespace: production
+  labels:
+    app: gitops-api
+spec:
+  podSelector:
+    matchLabels:
+      app: gitops-api
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow incoming HTTP traffic on port 8000 from anywhere in the cluster (e.g., Service, Prometheus)
+  - from:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  # Allow DNS resolution to CoreDNS in kube-system
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow outbound HTTPS traffic to AWS services (ECR, SSM) and external APIs,
+  # while blocking access to AWS Instance Metadata Service (169.254.169.254) as a security best practice.
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 169.254.169.254/32
+    ports:
+    - protocol: TCP
+      port: 443
