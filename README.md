@@ -9,66 +9,274 @@
 [![Kubernetes](https://img.shields.io/badge/kubernetes-v1.30+-326ce5.svg?logo=kubernetes&logoColor=white)](https://kubernetes.io)
 [![Terraform](https://img.shields.io/badge/terraform-v1.11+-844fba.svg?logo=terraform&logoColor=white)](https://www.terraform.io)
 [![AWS](https://img.shields.io/badge/AWS-Certified%20Architecture-232f3e.svg?logo=amazon-aws&logoColor=white)](https://aws.amazon.com)
+[![ArgoCD](https://img.shields.io/badge/ArgoCD-v3.5.5-orange.svg?logo=argo&logoColor=white)](https://argoproj.github.io/cd/)
+[![Kyverno](https://img.shields.io/badge/Kyverno-v3.9.1-008080.svg?logo=kyverno&logoColor=white)](https://kyverno.io/)
+[![Checkov](https://img.shields.io/badge/Checkov-IaC%20Security-red.svg)](https://www.checkov.io/)
 
-A comprehensive continuous delivery (**GitOps**) and integrated security (**DevSecOps**) environment, engineered following least-privilege principles, ephemeral secrets, immutable image tagging, multi-tenancy governance, and continuous admission policy enforcement (*Policy-as-Code*).
+A production-grade cloud native platform engineered to demonstrate **Enterprise GitOps, Shift-Left DevSecOps, and Zero-Trust Kubernetes Governance**. 
+
+Designed to eliminate common cloud anti-patterns (such as static credentials in CI/CD, plain-text secrets in Terraform state, and unconstrained container runtimes), this platform implements a fully declarative, auditable, and automated delivery lifecycle connecting **AWS**, **GitHub Actions**, **ArgoCD**, **Kyverno**, and **Prometheus**.
+
+---
+
+## 📑 Table of Contents
+
+- [🏛️ Solution Architecture](#️-solution-architecture)
+- [🔄 End-to-End System Workflow](#-end-to-end-system-workflow)
+- [🧠 Deep-Dive Engineering Decisions & "The Why"](#-deep-dive-engineering-decisions--the-why)
+  - [1. Keyless CI/CD via AWS IAM OIDC Federation](#1-keyless-cicd-via-aws-iam-oidc-federation)
+  - [2. Shift-Left Security Pipeline (Checkov, Trivy, Pytest)](#2-shift-left-security-pipeline-checkov-trivy-pytest)
+  - [3. Pull-Based GitOps Delivery vs. Push-Based CI/CD](#3-pull-based-gitops-delivery-vs-push-based-cicd)
+  - [4. Zero-Trust Runtime & Policy-as-Code (Kyverno)](#4-zero-trust-runtime--policy-as-code-kyverno)
+  - [5. State Sanitization & Dynamic ECR Token Generation (ESO)](#5-state-sanitization--dynamic-ecr-token-generation-eso)
+  - [6. Defense-in-Depth Network Isolation](#6-defense-in-depth-network-isolation)
+  - [7. Resilient Health Probes & OpenMetrics Telemetry](#7-resilient-health-probes--openmetrics-telemetry)
+- [💡 Architectural Comparison (Anti-patterns vs. Enterprise Standard)](#-architectural-comparison-anti-patterns-vs-enterprise-standard)
+- [⚖️ Trade-offs: Local Lab vs. AWS Production](#️-trade-offs-local-lab-vs-aws-production)
+- [📁 Repository Structure](#-repository-structure)
+- [🛠️ Technology Stack](#️-technology-stack)
+- [🚀 Local Reproduction Guide (Runbooks)](#-local-reproduction-guide-runbooks)
+- [📄 License](#-license)
 
 ---
 
 ## 🏛️ Solution Architecture
 
-The workflow connects the public cloud (**AWS**), automation pipelines with shift-left security (**GitHub Actions**), and container orchestration with governance (**Kubernetes & ArgoCD**):
+The platform architecture bridges managed cloud services on **AWS**, an automated security-first CI/CD pipeline in **GitHub Actions**, and a hardened multi-node **Kubernetes** cluster synchronized declaratively via **ArgoCD**:
 
 <p align="center">
-  <img src="docs/assets/architecture.svg" alt="Solution Architecture" width="100%">
+  <img src="docs/assets/architecture.svg" alt="Enterprise GitOps & DevSecOps Architecture" width="100%">
 </p>
 
 ---
 
-## 💡 Engineering Decisions & Security Differentiators
+## 🔄 End-to-End System Workflow
 
-| Domain | Traditional Approach (Anti-pattern) | This Project's Approach (Enterprise Standard) |
-| :--- | :--- | :--- |
-| **CI/CD Authentication** | Static `AWS_ACCESS_KEY_ID` saved in GitHub Secrets. | **AWS IAM OIDC Federation:** Long-lived keys eliminated, authenticating via immutable repository claims. |
-| **Secrets Storage** | Plain-text passwords saved in `terraform.tfstate`. | **`ephemeral` + `value_wo`:** Sensitive passwords dynamically generated into SSM without persistence in Terraform state. *(Trade-off: static IAM credential used solely to enable local Kind lab; see Trade-offs section).* |
-| **ECR Token in K8s** | Manual CronJob running bash scripts or static secrets expiring after 12h. | **ESO ECRAuthorizationToken Generator:** Native operator auto-renews authentication tokens every 30m autonomously. |
-| **Update Lifecycle** | CI/CD bot commits directly to `master` branch. | **Automated Pull Requests:** The pipeline opens a rolling branch with PR for auditability and merge governance. |
-| **Pipeline Security** | Direct build and deploy without vulnerability scanning or unit tests. | **Shift-Left Security:** Automated unit testing via **Pytest** (fail-fast), IaC security scanning via **Checkov**, and container CVE scanning via **Aqua Trivy**. |
-| **Runtime Security** | Containers running as `root` with writable root filesystem. | **CIS Hardening & Kyverno:** `readOnlyRootFilesystem: true`, numeric non-root user (UID 10001), drop all capabilities, and Admission Webhook blocking pods without CPU/memory limits. |
-| **GitOps Governance** | ArgoCD deploying all applications into the `default` project. | **Dedicated ArgoCD `AppProject`:** Strict whitelist of Git source repositories, target cluster/namespace destinations (`production`), and blocking arbitrary cluster-scoped resources. |
-| **Cost Optimization (FinOps)** | ECR repository retaining images indefinitely. | **ECR Lifecycle Policy:** Automatic image expiration strictly retaining the 10 most recent images, preventing uncontrolled storage costs. |
-| **Observability & Health** | Blind probes or liveness probes restarting pods during dependency hiccups. | **Strict separation of Liveness (`/healthz`) vs. Readiness (`/readyz`)** + **OpenMetrics/Prometheus Metrics** (`/metrics`). |
+Every code change follows a rigorous, automated promotion lifecycle from pull request to production runtime:
+
+```
+[Developer Push] 
+       │
+       ▼
+[GitHub Actions CI] ──► 1. Unit Tests (Pytest fail-fast)
+       │              ► 2. IaC Security Scan (Checkov SAST)
+       │              ► 3. Keyless Auth (AWS STS via GitHub OIDC)
+       │              ► 4. Docker Build & Image CVE Scan (Aqua Trivy)
+       │              ► 5. Push to AWS ECR (Immutable SHA tag)
+       │              ► 6. Automated PR updating k8s/base/deployment.yaml
+       ▼
+[Merge to Master]
+       │
+       ▼
+[ArgoCD Sync Loop] ──► 7. Detects Git drift & pulls target manifest
+       │              ► 8. Submits workload to Kubernetes API Server
+       ▼
+[Admission Webhook] ──► 9. Kyverno validates: Non-Root, No Privilege Escalation, Resource Limits
+       │
+       ├─── [Violation] ──► REJECTED (Pod blocked before scheduling)
+       └─── [Approved]  ──► Pod scheduled to worker node
+                               │
+                               ▼
+[External Secrets]  ──► 10. Refreshes AWS ECR docker-config token every 30m
+                     ► 11. Pulls database credentials from AWS SSM Parameter Store
+                               │
+                               ▼
+[Runtime Monitoring] ─► 12. Prometheus scrapes /metrics + verifies separated /healthz & /readyz
+```
 
 ---
 
-## ⚖️ Architectural Trade-offs: Lab vs. Enterprise Production
+## 🧠 Deep-Dive Engineering Decisions & "The Why"
 
-This project was built to be 100% reproducible locally via **Kind** with virtually zero cloud costs. To maintain this balance, conscious engineering trade-offs were made:
+### 1. Keyless CI/CD via AWS IAM OIDC Federation
 
-| Component | Implementation in this Lab (Kind) | Enterprise Implementation (AWS EKS) | Trade-off Rationale |
+* **The Problem:** Storing long-lived `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in GitHub Secrets represents a high-severity security risk. Static keys do not expire automatically, lack context-based constraints, and if leaked, grant broad, untraceable access to the AWS account.
+* **The Engineering Solution:** Configured an **OpenID Connect (OIDC) Identity Provider** between GitHub Actions and AWS IAM. The pipeline uses `aws-actions/configure-aws-credentials` to request short-lived (15–60 min) STS credentials via `sts:AssumeRoleWithWebIdentity`.
+* **Security Hardening:** The IAM Role trust policy strictly evaluates immutable GitHub repository claims:
+  ```json
+  "Condition": {
+    "StringEquals": {
+      "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+      "token.actions.githubusercontent.com:sub": "repo:mdhenriques@103260127/gitops-lab@1416272098:ref:refs/heads/master"
+    }
+  }
+  ```
+  Even if the repository name is spoofed or forked, only the exact cryptographic repository and account IDs can assume the deployment role.
+
+<p align="center">
+  <img src="docs/assets/github-actions-build-job.png" alt="GitHub Actions Keyless OIDC Execution" width="90%">
+</p>
+
+---
+
+### 2. Shift-Left Security Pipeline (Checkov, Trivy, Pytest)
+
+* **The Problem:** Catching infrastructure vulnerabilities or insecure base images in production is orders of magnitude more expensive and hazardous than catching them during code review.
+* **The Engineering Solution:** Implemented a three-tiered shift-left validation gate directly in the GitHub Actions runner:
+  1. **Unit & Contract Testing:** `pytest apps/api/test_main.py` executes before any packaging, guaranteeing functional correctness.
+  2. **Infrastructure as Code (IaC) SAST:** `checkov` analyzes all Terraform modules and Kubernetes manifests for security misconfigurations (e.g., exposed ports, missing encryption, wildcards in IAM policies).
+  3. **Container CVE Vulnerability Scanning:** `aquasecurity/trivy-action` scans the freshly built Docker image for high and critical OS/package vulnerabilities before allowing the image push to AWS ECR.
+
+<p align="center">
+  <img src="docs/assets/github-actions-checkov-job.png" alt="Checkov Security Scan Execution" width="90%">
+</p>
+
+---
+
+### 3. Pull-Based GitOps Delivery vs. Push-Based CI/CD
+
+* **The Problem:** In traditional push-based deployment models (e.g., CI script running `kubectl apply`), the CI runner requires cluster administrative credentials (`kubeconfig`). This expands the cluster's attack surface to the CI infrastructure and fails to detect manual configuration drift caused by cluster operators.
+* **The Engineering Solution:** Adopted a **Pull-based GitOps engine (ArgoCD)** residing inside the cluster. The CI workflow builds the container image with an immutable Git commit hash tag, then opens an automated Pull Request updating `k8s/base/deployment.yaml`. Once merged, ArgoCD reconciles the cluster state against Git.
+* **Governance via ArgoCD `AppProject`:** Workloads are isolated within a dedicated `gitops-lab-project` that enforces:
+  - Whitelisting only `https://github.com/mdhenriques/gitops-lab.git` as a valid source repository.
+  - Restricting deployment destinations strictly to the `production` namespace.
+  - Blocking unauthorized creation of cluster-scoped resources.
+
+<p align="center">
+  <img src="docs/assets/argo-applications.png" alt="ArgoCD Multi-Application Sync Overview" width="95%">
+</p>
+
+<p align="center">
+  <img src="docs/assets/argo-tree.png" alt="ArgoCD Workload Topology Tree" width="95%">
+</p>
+
+---
+
+### 4. Zero-Trust Runtime & Policy-as-Code (Kyverno)
+
+* **The Problem:** Default Kubernetes clusters do not prevent developers from accidentally deploying containers running as `root`, mounting writable file systems, or consuming unlimited cluster memory and CPU, leading to "noisy neighbor" cluster starvation.
+* **The Engineering Solution:** Enforced declarative **Admission Controller Policies** via **Kyverno** operating in `Enforce` mode. Any resource submitted to the API server is inspected before being persisted to `etcd`:
+  - **`disallow-root-and-privileged`:** Enforces `runAsNonRoot: true`, numeric UID (10001), drops all Linux capabilities (`drop: ["ALL"]`), and prevents privilege escalation (`allowPrivilegeEscalation: false`).
+  - **`require-resources`:** Mandates that every container explicitly define `requests` and `limits` for both CPU and memory.
+  - **Container Hardening:** The API image builds with a non-root user and mounts `readOnlyRootFilesystem: true`, neutralizing common script-injection and file modification attacks.
+
+<p align="center">
+  <img src="docs/assets/kyverno-blocking.png" alt="Kyverno Admission Webhook Blocking Rogue Pod" width="95%">
+</p>
+
+---
+
+### 5. State Sanitization & Dynamic ECR Token Generation (ESO)
+
+* **The Problem with Secrets in IaC:** Terraform historically stores all inputs and outputs in plain text inside `terraform.tfstate`. If a database password is generated or passed to Terraform, it leaks into state storage.
+* **The Problem with ECR Authentication:** AWS ECR authentication tokens expire every 12 hours. Traditional solutions rely on unmaintainable Bash CronJobs running `aws ecr get-login-password` to patch Kubernetes secrets.
+* **The Engineering Solution:**
+  1. **Terraform 1.11+ `ephemeral` & `value_wo`:** Secrets are generated using `ephemeral.random_password` and pushed to AWS SSM Parameter Store using the write-only attribute `value_wo`. The password is transmitted directly to AWS and never written to the local or remote `.tfstate`.
+  2. **External Secrets Operator (ESO) + ECR Generator:** Utilized native ESO `ClusterGenerator` (`kind: ECRAuthorizationToken`) coupled with an `ExternalSecret`. The operator communicates directly with AWS STS/ECR, refreshing the Docker authentication token every 30 minutes seamlessly without custom scripts or CronJobs.
+
+---
+
+### 6. Defense-in-Depth Network Isolation
+
+* **The Problem:** Kubernetes networking follows an open by default model: any pod in any namespace can reach any other pod, exposing backend services to lateral movement attacks if an unrelated container is compromised.
+* **The Engineering Solution:** Implemented a zero-trust `NetworkPolicy` on the `production` namespace:
+  - **Default Ingress Restriction:** Blocks all incoming traffic except explicit HTTP traffic routed to port 8000 and metrics scraping from the `monitoring` namespace.
+  - **Targeted Egress Whitelisting:** Permits DNS resolution (`kube-system` UDP 53) and outbound HTTPS (port 443) exclusively for AWS SSM and ECR API communication, blocking arbitrary external network calls.
+
+---
+
+### 7. Resilient Health Probes & OpenMetrics Telemetry
+
+* **The Problem:** Conflating Liveness and Readiness probes is a frequent cause of cascading failures in distributed systems. If a database is slow and a Liveness probe fails, Kubernetes kills the pod, exacerbating traffic load on surviving replicas.
+* **The Engineering Solution:**
+  - **Liveness Probe (`/healthz`):** Verifies strictly that the Python process and event loop are responsive. It does not check downstream dependencies.
+  - **Readiness Probe (`/readyz`):** Verifies that configuration parameters, SSM secrets, and network dependencies are available. If a dependency falters, traffic is diverted without killing the container.
+  - **Observability via Prometheus:** Integrated `prometheus-fastapi-instrumentator` exposing golden signals (HTTP request rate, error rate, and request duration percentiles) on `/metrics`.
+
+<p align="center">
+  <img src="docs/assets/prometheus-graph-rate.png" alt="Prometheus Real-Time Telemetry Graph" width="95%">
+</p>
+
+---
+
+## 💡 Architectural Comparison (Anti-patterns vs. Enterprise Standard)
+
+| Domain | Traditional Approach (Anti-pattern) | This Project's Approach (Enterprise Standard) | Architectural Benefit |
 | :--- | :--- | :--- | :--- |
-| **K8s ➔ AWS Authentication** | Least-privilege `aws_iam_access_key` stored in local Secret. | **EKS Pod Identity** or **IRSA (IAM Roles for Service Accounts)**. | Local clusters outside AWS do not have native EKS OIDC providers. In production, ESO static keys are 100% eliminated via IRSA. |
-| **Prometheus Persistence** | `persistentVolume: false` (Ephemeral in-memory storage). | **EBS CSI Driver** or **Amazon Managed Prometheus (AMP)**. | Eliminates EBS volume charges and local provisioner dependencies in Kind, keeping the lab lightweight and fast to spin up. |
-| **Secrets in Terraform State** | SSM Parameters hardened via `value_wo` and ephemeral passwords. | Hardened SSM Parameters + AWS Secrets Manager with dedicated KMS CMK. | SSM Standard Parameter Store flawlessly fulfills secure variable injection at zero additional cost. |
-| **DevSecOps Scans (Checkov / Trivy)** | Informative mode execution (`soft_fail: true` / `exit-code: 0`). | Strict pipeline gating (*Hard-fail*) with enforcement gates. | Allows continuous auditing without breaking builds on enterprise rules requiring extra AWS costs (e.g., dedicated KMS CMKs, S3 Cross-Region Replication, and Access Logging on lab buckets). |
+| **CI/CD Authentication** | Static `AWS_ACCESS_KEY_ID` saved in GitHub Secrets. | **AWS IAM OIDC Federation:** Keyless authentication using immutable GitHub repository claims. | Zero secret rotation overhead; eliminates key leakage blast radius. |
+| **Secrets in IaC** | Passwords committed or stored in plain text in `terraform.tfstate`. | **`ephemeral` + `value_wo`:** Sensitive passwords sent to AWS SSM without persisting in state files. | State file can be audited and shared without exposing production secrets. |
+| **ECR Image Pull Auth** | Custom CronJob script patching Kubernetes `dockerconfigjson` every 12h. | **ESO `ECRAuthorizationToken` Generator:** Native operator auto-refreshes auth token every 30m. | Eliminates fragile shell scripts; natively reconciled by Kubernetes operator. |
+| **GitOps Deployment** | CI runner executes `kubectl apply` using cluster admin `kubeconfig`. | **Pull-Based GitOps (ArgoCD):** Cluster pulls changes; automated PRs update image tags. | Cluster credentials never leave the cluster; automatic drift detection and auto-healing. |
+| **Pipeline Security** | Unverified code built and deployed directly to registry. | **Shift-Left Security:** Pytest unit tests, Checkov IaC scanning, and Trivy container CVE scans. | Bugs and compliance violations blocked at commit time before packaging. |
+| **Runtime Hardening** | Containers running as `root` with writable file systems and full capabilities. | **CIS Hardening & Kyverno:** `readOnlyRootFilesystem`, non-root UID 10001, capability drops. | Mitigates container breakout attacks and file tampering at runtime. |
+| **Cluster Governance** | All applications deployed into ArgoCD `default` project without restrictions. | **Dedicated ArgoCD `AppProject`:** Whitelisted Git repos, target namespaces, and cluster resources. | Enforces strict multi-tenancy boundaries and prevents resource hijacking. |
+| **Cost Optimization** | ECR repository storing images indefinitely without retention rules. | **ECR Lifecycle Policy:** Retains strictly the 10 most recent images; purges older builds. | Predictable, near-zero AWS storage costs (**FinOps** best practice). |
+| **Observability** | Single health probe checking both server and database availability. | **Separated Liveness (`/healthz`) vs. Readiness (`/readyz`)** + **Prometheus Metrics**. | Prevents cascading restart storms; provides granular golden-signal telemetry. |
+
+---
+
+## ⚖️ Trade-offs: Local Lab vs. AWS Production
+
+This platform was engineered to be **100% reproducible on a local developer workstation** using **Kind** while interfacing with real AWS cloud infrastructure at virtually zero cost. To balance realism with cost efficiency, the following deliberate design trade-offs were made:
+
+| Component | Implementation in this Lab (Kind) | Enterprise Production (AWS EKS) | Trade-off Rationale |
+| :--- | :--- | :--- | :--- |
+| **Cluster IAM Auth** | `aws_iam_access_key` with least-privilege stored in Kubernetes Secret. | **EKS Pod Identity** or **IRSA (IAM Roles for Service Accounts)**. | Local clusters outside AWS lack the native EKS OIDC identity issuer. In production EKS, static ESO credentials are 100% replaced by IAM service account annotations. |
+| **Storage Persistence** | Ephemeral storage (`persistentVolume: false`) for Prometheus. | **EBS CSI Driver** or **Amazon Managed Prometheus (AMP)**. | Eliminates monthly EBS volume charges and dynamic provisioner overhead, keeping the local cluster fast and lightweight. |
+| **DevSecOps Scanners** | Informative mode execution (`soft_fail: true` / `exit-code: 0`). | Strict pipeline blocking (*Hard-fail*) with compliance gates. | Allows continuous auditing without breaking pipeline builds for enterprise policies that incur extra AWS costs (e.g., dedicated KMS CMK, S3 Cross-Region Replication, and S3 Access Logging). |
+| **Parameter Storage** | AWS Systems Manager (SSM) Standard Parameter Store. | AWS Secrets Manager with dedicated KMS Customer Managed Keys (CMK). | SSM Standard Parameter Store flawlessly fulfills secure variable injection with zero added AWS billing. |
 
 > [!NOTE]
-> **Pipeline Security Stance (Soft-Fail & FinOps):**
-> Static security scanners (**Checkov**) and container vulnerability scanners (**Aqua Trivy**) operate intentionally in **informative mode** (`soft_fail: true`). Findings such as *S3 Access Logging*, *Cross-Region Replication*, or *dedicated KMS CMK* are conscious **FinOps** decisions: they maintain zero cloud costs on AWS without masking compliance findings.
+> **FinOps & Compliance Posture:**
+> Static security scanners (**Checkov**) and container scanners (**Aqua Trivy**) operate intentionally in **informative mode** (`soft_fail: true`). Decisions such as omitting S3 Access Logging or Cross-Region Replication on the lab state bucket are deliberate **FinOps** choices: they maintain zero recurring costs while keeping the security scan audit trail transparent.
+
+---
+
+## 📁 Repository Structure
+
+```text
+├── .github/workflows/
+│   └── deploy.yaml              # GitHub Actions CI/CD (Pytest, Checkov, Trivy, OIDC, PR bot)
+├── apps/api/
+│   ├── Dockerfile               # Hardened multi-stage container (non-root UID 10001, python:3.11-slim)
+│   ├── main.py                  # FastAPI application with Prometheus instrumentator & health probes
+│   ├── test_main.py             # Automated unit tests for API endpoints and metrics
+│   ├── requirements.txt         # Runtime application dependencies
+│   └── requirements-dev.txt     # Development and testing dependencies (pytest, httpx)
+├── argocd/
+│   ├── app-project.yaml         # ArgoCD governance policy (repository & destination whitelisting)
+│   ├── application.yaml         # Primary GitOps application managing k8s/base/ workloads
+│   ├── monitoring-app.yaml      # Declarative Prometheus stack integration
+│   └── security-policies-app.yaml # GitOps deployment for Kyverno admission policies
+├── k8s/
+│   ├── base/
+│   │   ├── api-external-secret.yaml     # ESO sync between AWS SSM and Kubernetes Secret
+│   │   ├── aws-secret-store.yaml        # ClusterSecretStore provider definition
+│   │   ├── deployment.yaml              # Production workload deployment (hardened securityContext)
+│   │   ├── ecr-cluster-generator.yaml   # ESO ClusterGenerator for AWS ECR authentication
+│   │   ├── ecr-pull-external-secret.yaml # Auto-renewed docker-registry secret
+│   │   ├── network-policy.yaml          # Zero-trust network isolation for production namespace
+│   │   └── service.yaml                 # ClusterIP service definition
+│   └── eso-values.yaml                  # Helm configuration for External Secrets Operator
+├── policies/kyverno/
+│   ├── disallow-root.yaml       # Admission policy enforcing non-root & no privilege escalation
+│   └── require-resources.yaml   # Admission policy enforcing mandatory CPU/Memory requests & limits
+├── terraform/
+│   ├── bootstrap/               # Isolated stack for S3 remote backend with AES-256 & versioning
+│   │   └── main.tf
+│   ├── main.tf                  # AWS ECR (lifecycle policy), SSM Parameter, IAM OIDC Role & Policies
+│   └── variables.tf             # Parameterized configurations with typed variables
+├── docs/assets/                 # Architecture diagrams, observability graphs & pipeline screenshots
+├── kind-config.yaml             # Multi-node Kubernetes cluster configuration (1 control-plane, 2 workers)
+└── README.md                    # Platform documentation and engineering runbooks
+```
 
 ---
 
 ## 🛠️ Technology Stack
 
-- **Cloud Provider:** AWS (ECR with Lifecycle Policy, SSM Parameter Store, IAM OIDC, S3 Backend with Native State Locking)
-- **Infrastructure as Code (IaC):** Terraform >= 1.11 (Modular HCL with parameterized `variables.tf` and isolated bootstrap stack)
-- **Container & Runtime:** Docker (python:3.11-slim, non-root UID 10001, `readOnlyRootFilesystem: true`), Kubernetes v1.30+ (Kind multi-node: 1 control-plane, 2 workers)
-- **GitOps Engine:** ArgoCD (AppProject with governance, isolation in `production` namespace, declarative pattern with auto-heal and prune)
-- **Security & Policies:** Checkov (SAST), Aqua Trivy (CVE Scanner), Kyverno Admission Controller, External Secrets Operator (ESO)
-- **Application & Quality:** Python 3.11, FastAPI, Uvicorn, Pytest (automated unit tests), Prometheus Instrumentator, Structured JSON Logs
+- **Cloud Infrastructure:** AWS (ECR with Lifecycle Policy, SSM Parameter Store, IAM OIDC Federation, S3 Remote State Backend)
+- **Infrastructure as Code (IaC):** Terraform >= 1.11 (Modular HCL, write-only SSM parameters, state bootstrap)
+- **Containerization & Runtime:** Docker, Kubernetes v1.30+ (Kind multi-node: 1 control-plane, 2 workers)
+- **GitOps Continuous Delivery:** ArgoCD v3.5.5 (AppProject governance, automated self-healing, declarative pruning)
+- **Policy-as-Code & Security:** Kyverno v3.9.1 (Admission Controller Webhooks), External Secrets Operator v2.12.0, Checkov (IaC SAST), Aqua Trivy (Container CVE Scanner)
+- **Application & Observability:** Python 3.11, FastAPI, Uvicorn, Pytest, Prometheus, OpenMetrics, Structured JSON Logging
 
 ---
 
-## 🚀 How to Reproduce the Environment Locally
+## 🚀 Local Reproduction Guide (Runbooks)
+
+If you wish to deploy and test the entire platform on your local machine, follow the runbooks below:
 
 ### ⚠️ Step 0: Mandatory Fork (Do not use direct `git clone`)
 
@@ -197,86 +405,41 @@ kubectl apply -f argocd/monitoring-app.yaml
 
 ---
 
-## 🔍 Validation & Hands-on Testing
+### 6. Verification and Hands-on Testing
 
-### 1. Testing Security Policy Enforcement (Kyverno)
-Attempt to run a standard container violating non-root execution or resource limits constraints:
+#### Testing Kyverno Policy Enforcement
+Attempt to run an unconstrained, root container in the `production` namespace:
 ```bash
 kubectl run rogue-pod --image=nginx -n production
 ```
-**Expected outcome (blocked by Admission Webhook):**
+Expected response:
 ```text
 Error from server: admission webhook "validate.kyverno.svc-fail" denied the request: 
-
-resource Pod/production/rogue-pod was blocked due to the following policies 
-
-disallow-root-and-privileged:
-  check-privilege-escalation: 'validation error: SECURITY ALERT: Pod blocked! Privilege escalation is forbidden (securityContext.allowPrivilegeEscalation: false).'
-  check-run-as-non-root: 'validation error: SECURITY ALERT: Pod blocked! Containers must run as non-root (securityContext.runAsNonRoot: true).'
-require-resources:
-  validate-resources: 'validation error: SECURITY ALERT: Container blocked! CPU and Memory limits and requests are required (resources.requests and resources.limits).'
+resource Pod/production/rogue-pod was blocked due to the following policies:
+disallow-root-and-privileged: Containers must run as non-root.
+require-resources: CPU and Memory limits and requests are required.
 ```
 
-<p align="center">
-  <img src="docs/assets/kyverno-blocking.png" alt="Kyverno Blocking Rogue Pod" width="100%">
-</p>
-
----
-
-### 2. Testing the API & Secure Secrets Injection
-Forward the API service port in the `production` namespace:
+#### Testing the API & Secure Secrets Injection
 ```bash
 kubectl port-forward svc/gitops-api-svc 8000:80 -n production
 ```
+- Access `http://localhost:8000/`: Verifies dynamic SSM injection without exposing credentials.
+- Access `http://localhost:8000/healthz` and `http://localhost:8000/readyz`: Tests probe segregation.
+- Access `http://localhost:8000/metrics`: Exposes Prometheus metrics in OpenMetrics format.
 
-- **Root Endpoint** (`http://localhost:8000/`): Verifies that secrets were retrieved from AWS SSM via ESO without leaking plain-text passwords:
-  ```json
-  {
-    "message": "GitOps operating in real time with AWS ECR, ArgoCD, and Observability!",
-    "database_configured": true,
-    "db_status": "Connected successfully (Injected via AWS SSM Parameter Store)"
-  }
-  ```
-- **Liveness Probe** (`http://localhost:8000/healthz`): Returns `{"status": "alive"}` ensuring the process is alive.
-- **Readiness Probe** (`http://localhost:8000/readyz`): Returns `{"status": "ready"}` only when dependencies are injected.
-- **Prometheus Metrics** (`http://localhost:8000/metrics`): Exposes request counts and latencies in OpenMetrics format.
-
----
-
-### 3. Accessing Web Dashboards
-
-#### ArgoCD Dashboard
-```bash
-kubectl port-forward svc/argocd-server -n argocd 8080:443
-```
-- Access: `https://localhost:8080` (Username: `admin`)
-- Retrieve initial password:
+#### Accessing Dashboards
+- **ArgoCD (`http://localhost:8080`):**
   ```bash
+  kubectl port-forward svc/argocd-server -n argocd 8080:443
   kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d && echo ""
   ```
+- **Prometheus (`http://localhost:9090`):**
+  ```bash
+  kubectl port-forward svc/prometheus-server -n monitoring 9090:80
+  ```
 
-<p align="center">
-  <img src="docs/assets/argo-applications.png" alt="ArgoCD Applications Overview" width="100%">
-</p>
-
-<p align="center">
-  <img src="docs/assets/argo-tree.png" alt="ArgoCD Workload Topology Tree" width="100%">
-</p>
-
-#### Prometheus Dashboard
-```bash
-kubectl port-forward svc/prometheus-server -n monitoring 9090:80
-```
-- Access: `http://localhost:9090`
-- Query the metric `sum by (status) (rate(http_requests_total[1m]))` in the **Graph** tab to visualize real-time telemetry segmented by HTTP response codes:
-
-<p align="center">
-  <img src="docs/assets/prometheus-graph-rate.png" alt="Prometheus Real-Time Metrics & Probes" width="100%">
-</p>
-
----
-
-### 4. Running Unit Tests Locally
+#### Running Unit Tests Locally
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
